@@ -2,7 +2,7 @@ from mcp.server.fastmcp import FastMCP
 import requests
 from pathlib import Path
 
-mcp = FastMCP("query-mcp")
+mcp = FastMCP("colabfit-mcp")
 
 @mcp.tool()
 def dataset_query(

@@ -12,12 +12,12 @@ Make sure the mcp package is installed.
 pip install mcp[cli]
 ```
 Modify your Claude configuration file.
-Navigate to Settings &rarr; Developer &rarr; Edit Config
+Navigate to Settings &rarr; Developer &rarr; Edit Config.
 Your config file should look something like:
 ```
     {
     "mcpServers": {
-        "query-mcp": {
+        "colabfit-mcp": {
         "command": "<path to environment's mcp command>",
         "args": [
             "run",
