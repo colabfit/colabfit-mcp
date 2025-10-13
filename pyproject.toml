@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "colabfit-mcp"
+description = "A suite of MCP tools for interacting with the ColabFit database"
+license = {file = 'LICENSE'}
+readme = "README.md"
+authors = [
+    {name = 'ColabFit'}
+]
+version = "0.0.1"
+requires-python = ">= 3.10"
+dependencies = [
+    "mcp",
+]
+classifiers=[
+    "Development Status :: 3 - Alpha",
+    "Topic :: Utilities",
+    "License :: OSI Approved :: BSD License",
+]
+keywords = ["machine learning", "interatomic potentials", "MCP", "model context protocol"]
+
+[tool.setuptools.packages.find]
+exclude = ["public"]
+
+[project.urls]
+Homepage = ""
+
