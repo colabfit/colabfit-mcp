@@ -14,6 +14,7 @@ version = "0.0.1"
 requires-python = ">= 3.10"
 dependencies = [
     "mcp",
+    "mcp[cli]",
 ]
 classifiers=[
     "Development Status :: 3 - Alpha",
@@ -26,5 +27,5 @@ keywords = ["machine learning", "interatomic potentials", "MCP", "model context 
 exclude = ["public"]
 
 [project.urls]
-Homepage = ""
+Homepage = "https://github.com/colabfit/colabfit-mcp"
 
