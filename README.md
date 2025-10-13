@@ -27,6 +27,10 @@ Your config file should look something like:
     }
         }
 ```
+
+## Functionality
+Currently, this MCP server will allow clients to query the online ColabFit database and download its dataset files.
+
 ## License
 The ColabFit Tools package is copyrighted by the Regents of the University of
 Minnesota. It can be freely used for educational and research purposes by
