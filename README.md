@@ -45,5 +45,5 @@ implied. The downloading, or executing any part of this software constitutes an
 implicit agreement to these terms. These terms and conditions are subject to
 change at any time without prior notice.
 
-[mcp-name: colabfit-mcp]: # 
+[mcp-name: io.github.colabfit/colabfit-mcp]: # 
 
