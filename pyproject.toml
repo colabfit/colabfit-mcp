@@ -10,11 +10,11 @@ readme = "README.md"
 authors = [
     {name = 'ColabFit'}
 ]
-version = "0.0.3"
+version = "0.0.4"
 requires-python = ">= 3.10"
 dependencies = [
-    "mcp",
-    "mcp[cli]",
+    "mcp>=1.0.0",
+    "mace-torch>=0.3.0",
 ]
 classifiers=[
     "Development Status :: 3 - Alpha",
