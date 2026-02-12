@@ -1,0 +1,35 @@
+# git / vcs
+.git/
+.github/
+.claude/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+pg_credentials.json
+
+# python / virtual env
+.venv/
+mcp_env/
+__pycache__/
+*.pyc
+
+# build / dist artifacts
+build/
+dist/
+*.egg-info/
+colabfit_mcp.egg-info/
+
+# developer tools / caches
+ruff_cache/
+
+# data / notebooks / logs
+*.ipynb
+logs/
+kliff.log
+
+# dev / scratch
+dev_files/
+example.txt
+valid_indices_42.txt

@@ -4,28 +4,43 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "colabfit-mcp"
-description = "A suite of MCP tools for interacting with the ColabFit database"
-license = {file = 'LICENSE'}
+version = "0.1.0"
+description = "MCP tools for ColabFit dataset discovery, model training and deployment"
+license = {file = "LICENSE"}
 readme = "README.md"
-authors = [
-    {name = 'ColabFit'}
-]
-version = "0.0.4"
+authors = [{name = "ColabFit"}]
 requires-python = ">= 3.10"
 dependencies = [
-    "mcp>=1.0.0",
-    "mace-torch>=0.3.0",
+    "mcp[cli]>=1.0.0",
+    "pymongo>=4.0",
+    "requests",
 ]
-classifiers=[
+classifiers = [
     "Development Status :: 3 - Alpha",
     "Topic :: Utilities",
     "License :: OSI Approved :: BSD License",
 ]
-keywords = ["machine learning", "interatomic potentials", "MCP", "model context protocol"]
+keywords = [
+    "machine learning",
+    "interatomic potentials",
+    "MCP",
+    "model context protocol",
+    "materials science",
+]
+
+[project.optional-dependencies]
+train = ["mace-torch>=0.3.0"]
+full = [
+    "mace-torch>=0.3.0",
+    "kimpy",
+    "kliff",
+]
 
 [tool.setuptools.packages.find]
-exclude = ["public"]
+where = ["src"]
+
+[project.scripts]
+colabfit-mcp = "colabfit_mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/colabfit/colabfit-mcp"
-
