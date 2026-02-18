@@ -1,13 +1,14 @@
 import shutil
 
-from colabfit_mcp.config import DOWNLOAD_DIR, MODEL_DIR, MONGODB_HOST, MONGODB_PORT
+from colabfit_mcp.config import DOWNLOAD_DIR, MODEL_DIR
+# from colabfit_mcp.config import MONGODB_HOST, MONGODB_PORT
 
 
 def check_status() -> dict:
     """Check system status including GPU, packages, and connectivity.
 
     Returns versions of key packages (torch, mace, kim-api), GPU
-    availability, MongoDB connectivity, disk usage, and lists of
+    availability, disk usage, and lists of
     existing models and datasets.
 
     Returns:
@@ -16,7 +17,7 @@ def check_status() -> dict:
     status = {
         "gpu": _gpu_info(),
         "packages": _package_versions(),
-        "mongodb": _check_mongodb(),
+        # "mongodb": _check_mongodb(),
         "disk": _disk_info(),
         "models": _list_dir(MODEL_DIR),
         "datasets": _list_dir(DOWNLOAD_DIR),
@@ -42,7 +43,7 @@ def _gpu_info() -> dict:
 
 def _package_versions() -> dict:
     versions = {}
-    for pkg in ("torch", "mace", "kimpy", "kliff"):
+    for pkg in ("torch", "mace"):
         try:
             mod = __import__(pkg)
             versions[pkg] = getattr(mod, "__version__", "installed")
@@ -64,19 +65,19 @@ def _package_versions() -> dict:
     return versions
 
 
-def _check_mongodb() -> dict:
-    try:
-        from pymongo import MongoClient
-        client = MongoClient(
-            MONGODB_HOST, MONGODB_PORT, serverSelectionTimeoutMS=3000
-        )
-        client.admin.command("ping")
-        client.close()
-        return {"connected": True, "host": MONGODB_HOST, "port": MONGODB_PORT}
-    except ImportError:
-        return {"connected": False, "note": "pymongo not installed"}
-    except Exception as e:
-        return {"connected": False, "error": str(e)}
+# def _check_mongodb() -> dict:
+#     try:
+#         from pymongo import MongoClient
+#         client = MongoClient(
+#             MONGODB_HOST, MONGODB_PORT, serverSelectionTimeoutMS=3000
+#         )
+#         client.admin.command("ping")
+#         client.close()
+#         return {"connected": True, "host": MONGODB_HOST, "port": MONGODB_PORT}
+#     except ImportError:
+#         return {"connected": False, "note": "pymongo not installed"}
+#     except Exception as e:
+#         return {"connected": False, "error": str(e)}
 
 
 def _disk_info() -> dict:

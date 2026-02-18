@@ -10,32 +10,48 @@ from colabfit_mcp.config import (
     TRAIN_DEFAULTS,
     TRAINING_TIMEOUT,
 )
+from colabfit_mcp.helpers.dataset_resolver import resolve_train_file
 from colabfit_mcp.helpers.device import detect_device
 from colabfit_mcp.helpers.training import diagnose_failure, parse_training_log
 from colabfit_mcp.helpers.xyz import analyze_xyz
 
 
 def train_mace(
-    train_file: str,
+    train_file: str | None = None,
     model_name: str = "colabfit_mace",
     r_max: float = 5.0,
     max_num_epochs: int = 100,
-    batch_size: int = 10,
+    batch_size: int | None = None,
     device: str = None,
+    elements: list[str] | None = None,
 ) -> dict:
     """Train a MACE model from scratch on XYZ data.
 
+    When train_file is omitted, automatically discovers suitable datasets
+    in the local download directory. If a matching dataset is found, it is
+    used directly. If no match or only a partial match is found, returns
+    guidance to search and download from ColabFit.
+
     Args:
         train_file: Path to training XYZ file (extxyz format).
+            If None, auto-discovers from local datasets.
         model_name: Name for the trained model (default "colabfit_mace").
         r_max: Cutoff radius in Angstroms (default 5.0).
         max_num_epochs: Maximum training epochs (default 100).
-        batch_size: Training batch size (default 10).
+        batch_size: Training batch size (default from config MACE_BATCH_SIZE, 16).
         device: "cuda" or "cpu" (auto-detected if None).
+        elements: Chemical elements for dataset matching when
+            train_file is not provided (e.g. ["Si", "O"]).
 
     Returns:
         Dict with model path, training metrics, and next_step guidance.
     """
+    if train_file is None:
+        resolved_path, info = resolve_train_file(elements=elements)
+        if resolved_path is None:
+            return info
+        train_file = resolved_path
+
     train_path = Path(train_file)
     if not train_path.exists():
         return {
@@ -53,6 +69,7 @@ def train_mace(
     model_dir.mkdir(parents=True, exist_ok=True)
 
     defaults = TRAIN_DEFAULTS.copy()
+    batch_size = batch_size or defaults["batch_size"]
     num_channels = defaults["num_channels"]
     max_L = defaults["max_L"]
     hidden_irreps = (
@@ -70,6 +87,7 @@ def train_mace(
         f"--num_interactions={defaults['num_interactions']}",
         f"--max_num_epochs={max_num_epochs}",
         f"--batch_size={batch_size}",
+        f"--valid_batch_size={defaults['valid_batch_size']}",
         f"--device={device}",
         f"--loss={loss}",
         "--E0s=average",
@@ -77,11 +95,16 @@ def train_mace(
         f"--forces_key={COLABFIT_FORCES_KEY}",
         f"--stress_key={COLABFIT_STRESS_KEY}",
         f"--default_dtype={defaults['default_dtype']}",
+        f"--num_workers={defaults['num_workers']}",
         f"--seed={defaults['seed']}",
         f"--model_dir={model_dir}",
         f"--results_dir={model_dir}",
         f"--checkpoints_dir={model_dir}",
     ]
+    if defaults["pin_memory"]:
+        cmd.append("--pin_memory")
+    if device == "cuda":
+        cmd.append("--enable_cueq")
     if defaults["swa"]:
         cmd.append("--swa")
     if defaults["ema"]:
@@ -148,6 +171,9 @@ def train_mace(
             ),
         }
     except subprocess.TimeoutExpired:
+        process.kill()
+        process.stdout.read()
+        process.wait()
         return {
             "success": False,
             "error": "Training timed out (2 hour limit). "

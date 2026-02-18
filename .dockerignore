@@ -27,9 +27,10 @@ ruff_cache/
 # data / notebooks / logs
 *.ipynb
 logs/
-kliff.log
 
 # dev / scratch
 dev_files/
 example.txt
 valid_indices_42.txt
+relax.traj
+vib/

@@ -12,7 +12,7 @@ authors = [{name = "ColabFit"}]
 requires-python = ">= 3.10"
 dependencies = [
     "mcp[cli]>=1.0.0",
-    "pymongo>=4.0",
+    # "pymongo>=4.0",
     "requests",
 ]
 classifiers = [
@@ -32,8 +32,9 @@ keywords = [
 train = ["mace-torch>=0.3.0"]
 full = [
     "mace-torch>=0.3.0",
-    "kimpy",
-    "kliff",
+    "cuequivariance>=0.9.0",
+    "cuequivariance-torch>=0.9.0",
+    "cuequivariance-ops-torch-cu12>=0.9.0",
 ]
 
 [tool.setuptools.packages.find]

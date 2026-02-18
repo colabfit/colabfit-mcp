@@ -1,6 +1,6 @@
 # colabfit-mcp
 
-An MCP server for discovering [ColabFit](https://materials.colabfit.org) datasets, training MACE interatomic potentials, and deploying models via OpenKIM/KIM-API.
+An MCP server for discovering [ColabFit](https://materials.colabfit.org) datasets and training MACE interatomic potentials.
 
 ## Setup
 
@@ -13,13 +13,13 @@ cd colabfit-mcp
 # One-time setup: creates data directories and .env file
 make setup
 
-# Build Docker images with your user ID (avoids permission issues)
+# Build Docker images with your user ID for proper permissions
 make build
 
 # Start all services
 make start
 
-# View logs (optional)
+# View logs
 make logs
 ```
 
@@ -32,7 +32,7 @@ If you prefer not to use the Makefile:
 #### 1. Configure environment
 
 ```bash
-cp .env.example .env
+cp example.env .env
 # Edit .env to customize data directory location if desired
 ```
 
@@ -49,30 +49,16 @@ mkdir -p /your/custom/path/{models,datasets}
 #### 3. Build with user ID mapping
 
 ```bash
-# This ensures the container user matches your host user (avoids permission issues)
+# This ensures the container user matches your host user for proper permissions
 USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build
 ```
 
-#### 4. Start MongoDB
-
-```bash
-docker compose up -d mongodb
-```
-
-Wait a few seconds, then confirm it's healthy:
-
-```bash
-docker compose ps
-```
-
-You should see `mongodb` with status `Up ... (healthy)`.
-
-### 5. Register the MCP server
+### 4. Register the MCP server
 
 **Claude Code:**
 
 ```bash
-claude mcp add colabfit-mcp -- docker compose -f /path/to/colabfit-mcp/compose.yaml run --rm -i colabfit-mcp
+claude mcp add colabfit-mcp -- docker compose -f /path/to/colabfit-mcp/compose.yaml run --rm -i server
 ```
 
 Replace `/path/to/colabfit-mcp` with the absolute path to this repository.
@@ -89,52 +75,35 @@ Add to your Claude Desktop config (`Settings > Developer > Edit Config`):
       "command": "docker",
       "args": [
         "compose", "-f", "/path/to/colabfit-mcp/compose.yaml",
-        "run", "--rm", "-i", "colabfit-mcp"
+        "run", "--rm", "-i", "server"
       ]
     }
   }
 }
 ```
 
-### After a reboot or `docker compose down`
-
-The MCP server registration persists in your Claude config, but the MongoDB
-container does not auto-start. After a reboot, you only need to restart MongoDB:
-
-```bash
-cd /path/to/colabfit-mcp
-docker compose up -d mongodb
-```
-
-Then start (or restart) Claude Code or Claude Desktop. You do **not** need to
-re-register the MCP server.
-
-If you ran `docker compose down`, the same applies -- just `docker compose up -d mongodb`
-and restart your client. All trained models and downloaded datasets are stored in
-bind-mounted directories on the host filesystem (default: `./colabfit_data/`) and
-survive both reboots and `docker compose down`.
-
 ## Tools
 
 | Tool | Description |
 |------|-------------|
 | `search_datasets` | Search ColabFit database by text, elements, properties, software |
+| `check_local_datasets` | Scan local data directory for downloaded datasets, filter by elements/properties |
 | `download_dataset` | Download dataset as XYZ files with automatic analysis |
 | `fine_tune_mace` | Fine-tune MACE-MP-0 foundation model on a dataset (recommended) |
 | `train_mace` | Train a MACE model from scratch |
 | `deploy_model` | Export to TorchScript and install as KIM Portable Model |
-| `check_status` | Check GPU, packages, MongoDB, disk, existing models |
+| `check_status` | Check GPU, packages, disk, existing models |
 
 ## Typical Workflow
 
 1. `search_datasets` -- find datasets with the elements/properties you need
 2. `download_dataset` -- download and auto-analyze for training suitability
-3. `fine_tune_mace` -- fine-tune the MACE-MP-0-a medium foundation model
+3. `fine_tune_mace` -- fine-tune the MACE-MP-0 foundation model on your data
 4. `deploy_model` -- export and install as a KIM Portable Model
 
 ## Monitoring Training Progress
 
-Training output is available in **two ways** for maximum visibility:
+View training output in the following ways:
 
 ### 1. Real-time Container Logs (Recommended)
 
@@ -145,61 +114,132 @@ View live training output as it happens:
 make logs
 
 # Or directly with docker compose
-docker compose logs -f colabfit-mcp
+docker compose logs -f server
 ```
 
 Press `Ctrl+C` to exit (training continues in background).
 
 ### 2. Persistent Log Files
 
-Training also writes to log files in your data directory for historical review:
+Training writes log files in your data directory under each model's subdirectory, i.e.:
 
 ```bash
-# Default data directory
-tail -f ./colabfit_data/models/training.log
+./colabfit_data/models/<model_name>/training.log
 
-# Custom COLABFIT_DATA_ROOT location (if set in .env)
-tail -f $COLABFIT_DATA_ROOT/models/training.log
-
-# Model-specific logs (when available)
-ls -la ./colabfit_data/models/*/logs/
 ```
 
-**For Claude Code Users:**
+## Using a Trained Model with ASE
 
-Claude can troubleshoot training issues by:
-- Reading log files directly from the host filesystem
-- Viewing container logs via `docker compose logs` commands
-- Monitoring training metrics and loss curves
+After training or fine-tuning, the model directory contains several `.model` files.
+Use `<model_name>_stagetwo.model` for inference — it is the SWA-averaged final model
+and generally has the best accuracy.
 
-**Benefits:**
-- ✅ Real-time visibility into training progress
-- ✅ Persistent logs survive container restarts
-- ✅ Easy to share logs for debugging
-- ✅ Claude can directly analyze training issues
+### Attaching a MACE Calculator to ASE Atoms
+
+```python
+from mace.calculators import MACECalculator
+from ase.build import bulk
+
+calc = MACECalculator(
+    model_paths="colabfit_data/models/<model_name>/<model_name>_stagetwo.model",
+    device="cuda",       # or "cpu"
+    default_dtype="float64",
+)
+
+atoms = bulk("Si", "diamond", a=5.43)
+atoms.calc = calc
+```
+
+### Properties MACE Implements
+
+| Method | Returns | Units | Notes |
+|--------|---------|-------|-------|
+| `atoms.get_potential_energy()` | scalar | eV | |
+| `atoms.get_forces()` | `(N, 3)` array | eV/Å | |
+| `atoms.get_stress()` | `(6,)` Voigt array | eV/Å³ | periodic structures only; see note below |
+| `atoms.get_potential_energies()` | `(N,)` array | eV | per-atom energies |
+| `atoms.calc.get_property("node_energy", atoms)` | `(N,)` array | eV | per-atom energies relative to atomic references; no `atoms.get_*` wrapper |
+| `atoms.get_stresses()` | `(N, 6)` array | eV/Å³ | requires `compute_atomic_stresses=True` on calculator init |
+
+Enable per-atom stresses at calculator creation:
+
+```python
+calc = MACECalculator(..., compute_atomic_stresses=True)
+```
+
+**Stress note:** Stress is always computed via autodiff (virial: ∂E/∂ε). When
+`cauchy_stress` was present in the training data, the model was explicitly optimized
+to reproduce those values and stress predictions will be accurate. Without stress
+training data, the computation still runs but the values are less reliable.
+Stress is not computed for non-periodic structures (no cell/PBC) and will raise
+`PropertyNotImplementedError` in that case.
+
+### Properties Computed by ASE Itself (no calculator needed)
+
+| Method | Notes |
+|--------|-------|
+| `atoms.get_kinetic_energy()` | from `momenta` array; returns 0.0 if momenta not set |
+| `atoms.get_temperature()` | derived from kinetic energy |
+| `atoms.get_velocities()` | derived from momenta and masses |
+| `atoms.get_total_energy()` | `get_potential_energy() + get_kinetic_energy()` |
+
+### Unsupported Properties
+
+Calling `atoms.get_charges()`, `atoms.get_magnetic_moments()`, or
+`atoms.get_dipole_moment()` with a MACE calculator raises
+`PropertyNotImplementedError` — MACE does not predict these.
+
+### Common Workflows
+
+**Geometry optimization:**
+
+```python
+from ase.optimize import BFGS
+
+opt = BFGS(atoms, trajectory="relax.traj")
+opt.run(fmax=0.01)  # converge forces below 0.01 eV/Å
+```
+
+**Molecular dynamics:**
+
+```python
+from ase.md.langevin import Langevin
+from ase import units
+
+dyn = Langevin(atoms, timestep=1.0 * units.fs, temperature_K=300, friction=0.01)
+dyn.run(1000)
+```
+
+**Vibrational frequencies** (finite differences of forces; no stress training data needed):
+
+```python
+from ase.vibrations import Vibrations
+
+vib = Vibrations(atoms)
+vib.run()
+vib.summary()
+```
 
 ## Local Installation (without Docker)
 
 ```bash
 pip install colabfit-mcp            # Base: search + download only
-pip install 'colabfit-mcp[train]'   # + MACE training
-pip install 'colabfit-mcp[full]'    # + kimpy, kliff, KIM deployment
+pip install 'colabfit-mcp[full]'    # MACE Training
 ```
 
 ## Architecture
 
 ```
-colabfit-mcp container (GPU)     mongodb container
-├── MCP server (FastMCP, stdio)  └── KIMKit model store
-├── mace-torch, kimpy, kliff
-├── kim-api
-├── MACE-MP-0-a medium (cached)
+server container (GPU)             
+├── MCP server (FastMCP, stdio)    
+├── mace-torch
+├── kim-api (Not yet implemented)
+├── MACE-MP-0 foundation (cached)
 └── Training via mace_run_train
 ```
 
-Two containers managed by Docker Compose:
-- **colabfit-mcp** -- MCP server + ML training + KIM packages (GPU-enabled)
-- **mongodb** -- MongoDB 8.0 for KIMKit model management
+Container managed by Docker Compose:
+- **server** -- MCP server + ML training + KIM packages (GPU-enabled)
 
 ## Environment Variables
 
@@ -208,11 +248,15 @@ Two containers managed by Docker Compose:
 | `COLABFIT_DATA_ROOT` | `./colabfit_data` | **Host directory** for datasets and models (bind mount) |
 | `USER_ID` | `1000` | User ID for container (should match host user) |
 | `GROUP_ID` | `1000` | Group ID for container (should match host user) |
+| `FOUNDATION_MODEL` | `small` | MACE-MP-0 foundation size: `small`, `medium`, or `large` |
+| `MACE_DTYPE` | `float32` | Training precision. Use `float64` only for geometry optimization. |
+| `MACE_BATCH_SIZE` | `8` (fine-tune) / `16` (train) | Training batch size. Decrease if OOM. |
+| `MACE_VALID_BATCH_SIZE` | `16` / `32` | Validation batch size (can be larger than training). |
+| `MACE_NUM_WORKERS` | `4` | DataLoader worker processes for parallel data loading. |
 | `COLABFIT_BASE_URL` | `https://materials.colabfit.org` | ColabFit API base URL |
 | `COLABFIT_AUTH_USER` | `mcp-tool` | ColabFit API auth username |
 | `COLABFIT_AUTH_PASS` | `mcp-secret` | ColabFit API auth password |
-| `MONGODB_HOST` | `mongodb` | MongoDB hostname (internal) |
-| `MONGODB_PORT` | `27017` | MongoDB port |
+
 
 **Data Storage:**
 
@@ -221,7 +265,7 @@ project root), making data portable with the project. To use a fixed location th
 persists across project clones, set `COLABFIT_DATA_ROOT` in `.env`:
 
 ```bash
-cp .env.example .env
+cp example.env .env
 # Edit .env and set: COLABFIT_DATA_ROOT=/home/yourusername/ml_data
 ```
 
@@ -239,39 +283,12 @@ automatically detects your IDs, but you can override them in `.env` if needed.
 
 ## Troubleshooting
 
-**MCP server fails to connect / times out**: The most common cause is MongoDB
-not running when the MCP server starts. The server can auto-start MongoDB, but
-the health check adds ~12 seconds of startup time, which may exceed your
-client's connection timeout. Fix: run `docker compose up -d mongodb` and wait
-for it to be healthy before starting your client. With MongoDB already running,
-the server starts in ~2 seconds.
-
 **GPU not detected in container**: Ensure `nvidia-container-toolkit` is
 installed and the Docker daemon has been restarted. Verify with
 `docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi`.
 
-**MongoDB connection failures**: The entrypoint waits up to 30 seconds for
-MongoDB. If it doesn't connect, check that the `mongodb` service is healthy
-with `docker compose ps`. The MCP server will still start but KIMKit features
-will be unavailable.
-
 **MCP server not responding**: The server uses stdio transport, not HTTP. It
-must be launched via `docker compose run --rm -i colabfit-mcp`, not accessed
+must be launched via `docker compose run --rm -i server`, not accessed
 over a network port.
-
-## License
-
-The ColabFit Tools package is copyrighted by the Regents of the University of
-Minnesota. It can be freely used for educational and research purposes by
-non-profit institutions and US government agencies only. Other organizations are
-allowed to use the ColabFit Tools package only for evaluation purposes, and any
-further uses will require prior approval. The software may not be sold or
-redistributed without prior approval. One may make copies of the software for
-their use provided that the copies, are not sold or distributed, are used under
-the same terms and conditions. As unestablished research software, this code is
-provided on an "as is" basis without warranty of any kind, either expressed or
-implied. The downloading, or executing any part of this software constitutes an
-implicit agreement to these terms. These terms and conditions are subject to
-change at any time without prior notice.
 
 [mcp-name: io.github.colabfit/colabfit-mcp]: #

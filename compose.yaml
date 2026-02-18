@@ -6,7 +6,7 @@ services:
     command: sh -c "mkdir -p /data/models /data/datasets && chown -R ${USER_ID:-1000}:${GROUP_ID:-1000} /data && chmod -R 755 /data && echo 'Data directories ready'"
     restart: "no"
 
-  colabfit-mcp:
+  server:
     build:
       context: .
       dockerfile: Dockerfile
@@ -17,14 +17,18 @@ services:
     depends_on:
       init-data-dirs:
         condition: service_completed_successfully
-      mongodb:
-        condition: service_healthy
-    environment:
-      MONGODB_HOST: mongodb
-      MONGODB_PORT: "27017"
+      # mongodb:
+      #   condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    # environment:
+    #   MONGODB_HOST: mongodb
+    #   MONGODB_PORT: "27017"
     volumes:
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/models:/home/mcpuser/colabfit/models
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/datasets:/home/mcpuser/colabfit/datasets
+    shm_size: "2gb"
     deploy:
       resources:
         reservations:
@@ -33,15 +37,15 @@ services:
               count: 1
               capabilities: [gpu]
 
-  mongodb:
-    image: mongo:8.0
-    volumes:
-      - mongodata:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # mongodb:
+  #   image: mongo:8.0
+  #   volumes:
+  #     - mongodata:/data/db
+  #   healthcheck:
+  #     test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
 
-volumes:
-  mongodata:
+# volumes:
+#   mongodata:

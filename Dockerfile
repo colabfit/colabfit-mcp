@@ -29,11 +29,11 @@ RUN wget -q "https://s3.openkim.org/kim-api/kim-api-${KIM_API_VERSION}.txz" \
 COPY pyproject.toml README.md LICENSE /app/
 COPY src/ /app/src/
 WORKDIR /app
-RUN python3 -m pip install --no-cache-dir '.[full]' kimkit
+RUN python3 -m pip install --no-cache-dir '.[full]'
 
 RUN python3 -c \
     "from mace.calculators.foundations_models import mace_mp; \
-    mace_mp(model='medium', return_raw_model=True)"
+    mace_mp(model='small', return_raw_model=True)"
 
 # ---
 

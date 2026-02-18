@@ -33,8 +33,8 @@ help:
 setup:
 	@echo "Setting up ColabFit MCP..."
 	@if [ ! -f .env ]; then \
-		cp .env.example .env; \
-		echo "✓ Created .env file from .env.example"; \
+		cp example.env .env; \
+		echo "✓ Created .env file from example.env"; \
 		echo "  → Edit .env to customize settings"; \
 	else \
 		echo "✓ .env file already exists"; \
@@ -76,7 +76,7 @@ restart: stop start
 logs:
 	@echo "Following container logs (Ctrl+C to exit)..."
 	@echo "=========================================="
-	docker compose logs -f colabfit-mcp
+	docker compose logs -f server
 
 clean:
 	@echo "Cleaning up..."
@@ -90,4 +90,4 @@ test:
 	@docker compose ps
 	@echo ""
 	@echo "Testing MCP connection..."
-	@docker compose exec -T colabfit-mcp python3 -c "import colabfit_mcp; print('✓ MCP module loaded successfully')" 2>/dev/null || echo "✗ MCP not running or not ready"
+	@docker compose exec -T server python3 -c "import colabfit_mcp; print('✓ MCP module loaded successfully')" 2>/dev/null || echo "✗ MCP not running or not ready"
