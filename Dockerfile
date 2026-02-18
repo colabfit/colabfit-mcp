@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN wget -q "https://s3.openkim.org/kim-api/kim-api-${KIM_API_VERSION}.txz" \
     -O /tmp/kim-api.txz && \
-    echo "TODO: add sha256 checksum verification once checksum is published" && \
+    echo "225e3136d43e416a4424551e9e5f6d92cc6ecfe11389a1b6e97d6dcdfed83d44  /tmp/kim-api.txz" | sha256sum -c - && \
     tar -xJf /tmp/kim-api.txz -C /tmp && \
     rm /tmp/kim-api.txz && \
     cd /tmp/kim-api-${KIM_API_VERSION} && \

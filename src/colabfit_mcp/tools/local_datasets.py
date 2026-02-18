@@ -4,8 +4,8 @@ from colabfit_mcp.helpers.xyz import analyze_xyz_files
 
 
 def check_local_datasets(
-    elements: list[str] = None,
-    property_types: list[str] = None,
+    elements: list[str] | None = None,
+    property_types: list[str] | None = None,
 ) -> dict:
     """Primary dataset discovery mechanism for all training workflows.
 
@@ -19,6 +19,10 @@ def check_local_datasets(
             Returns datasets containing ALL specified elements.
         property_types: Filter by properties like "energy",
             "atomic_forces", "cauchy_stress".
+
+    Note:
+        Only subdirectories of the download directory whose names begin with
+        "DS_" (the ColabFit dataset ID prefix) are scanned.
 
     Returns:
         Dict with matching datasets, their analysis, and file paths.
@@ -86,8 +90,8 @@ def check_local_datasets(
 
 def _filter_datasets(
     datasets: list[dict],
-    elements: list[str] = None,
-    property_types: list[str] = None,
+    elements: list[str] | None = None,
+    property_types: list[str] | None = None,
 ) -> list[dict]:
     """Filter dataset list by element and property criteria."""
     results = datasets

@@ -55,7 +55,7 @@ def resolve_train_file(
         required = {e.capitalize() for e in elements}
         available = set(best["analysis"].get("elements", []))
         if required != available:
-            elements_match = "partial"
+            elements_match = "superset" if required.issubset(available) else "partial"
 
     if elements_match == "partial":
         local_summary = []
@@ -87,5 +87,6 @@ def resolve_train_file(
         "train_file": train_file,
         "elements": best["analysis"].get("elements", []),
         "n_configs": best["analysis"].get("n_configs", 0),
+        "elements_match": elements_match,
         "auto_selected": True,
     }
