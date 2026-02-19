@@ -10,7 +10,7 @@ from colabfit_mcp.config import (
     TRAIN_DEFAULTS,
     TRAINING_TIMEOUT,
 )
-from colabfit_mcp.helpers.dataset_resolver import resolve_train_file
+from colabfit_mcp.tools.dataset_resolver import resolve_train_file
 from colabfit_mcp.helpers.device import detect_device
 from colabfit_mcp.helpers.training import diagnose_failure, parse_training_log
 from colabfit_mcp.helpers.xyz import analyze_xyz
@@ -102,9 +102,9 @@ def train_mace(
         f"--checkpoints_dir={model_dir}",
     ]
     if defaults["pin_memory"]:
-        cmd.append("--pin_memory")
+        cmd.append("--pin_memory=True")
     if device == "cuda":
-        cmd.append("--enable_cueq")
+        cmd.append("--enable_cueq=True")
     if defaults["swa"]:
         cmd.append("--swa")
     if defaults["ema"]:
@@ -123,19 +123,17 @@ def train_mace(
                 bufsize=1,
             )
 
-            log_lines = []
             for line in iter(process.stdout.readline, ""):
                 if not line:
                     break
                 log.write(line)
                 print(line, end="", file=sys.stderr)
-                log_lines.append(line)
 
             process.wait(timeout=TRAINING_TIMEOUT)
 
         model_files = list(model_dir.glob("*.model"))
+        log_content = log_file.read_text()
         if not model_files:
-            log_content = "".join(log_lines)
             diag = diagnose_failure(log_content, "")
             return {
                 "success": False,
@@ -146,7 +144,6 @@ def train_mace(
             }
 
         model_path = max(model_files, key=lambda p: p.stat().st_mtime)
-        log_content = "".join(log_lines)
         metrics = parse_training_log(log_content)
 
         return {

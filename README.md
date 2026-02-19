@@ -91,7 +91,6 @@ Add to your Claude Desktop config (`Settings > Developer > Edit Config`):
 | `download_dataset` | Download dataset as XYZ files with automatic analysis |
 | `fine_tune_mace` | Fine-tune MACE-MP-0 foundation model on a dataset (recommended) |
 | `train_mace` | Train a MACE model from scratch |
-| `deploy_model` | Export to TorchScript and install as KIM Portable Model |
 | `check_status` | Check GPU, packages, disk, existing models |
 
 ## Typical Workflow

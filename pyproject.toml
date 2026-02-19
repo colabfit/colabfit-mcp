@@ -12,7 +12,6 @@ authors = [{name = "ColabFit"}]
 requires-python = ">= 3.10"
 dependencies = [
     "mcp[cli]>=1.0.0",
-    # "pymongo>=4.0",
     "requests",
 ]
 classifiers = [

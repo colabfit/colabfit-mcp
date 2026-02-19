@@ -26,11 +26,8 @@ DATA_ROOT = Path(os.environ.get("COLABFIT_DATA_ROOT", str(Path.home() / "colabfi
 DOWNLOAD_DIR = DATA_ROOT / "datasets"
 MODEL_DIR = DATA_ROOT / "models"
 
-# MONGODB_HOST = os.environ.get("MONGODB_HOST", "mongodb")
-# MONGODB_PORT = int(os.environ.get("MONGODB_PORT", "27017"))
 
 FOUNDATION_MODEL = os.environ.get("FOUNDATION_MODEL", "small")
-# TORCHML_DRIVER_ID = "TorchML__MD_173118614730_001"
 
 COLABFIT_ENERGY_KEY = "energy"
 COLABFIT_FORCES_KEY = "forces"

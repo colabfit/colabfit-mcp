@@ -22,7 +22,7 @@ help:
 	@echo "  make test       - Check system status"
 	@echo ""
 	@echo "First time setup:"
-	@echo "  1. Copy .env.example to .env and customize if needed"
+	@echo "  1. Copy example.env to .env and customize if needed"
 	@echo "  2. Run: make setup && make build && make start"
 	@echo ""
 	@echo "Current configuration:"
@@ -40,7 +40,7 @@ setup:
 		echo "✓ .env file already exists"; \
 	fi
 	@echo "Creating data directories with correct ownership..."
-	@docker run --rm -v "${PWD}/${COLABFIT_DATA_ROOT}:/data" -u ${USER_ID}:${GROUP_ID} alpine sh -c "mkdir -p /data/models /data/datasets && chmod 755 /data/models /data/datasets"
+	@mkdir -p "${COLABFIT_DATA_ROOT}/datasets" "${COLABFIT_DATA_ROOT}/models"
 	@echo "✓ Created data directories in: ${COLABFIT_DATA_ROOT}"
 	@echo ""
 	@echo "Next steps:"
