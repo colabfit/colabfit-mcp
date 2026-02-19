@@ -62,8 +62,6 @@ def download_dataset(dataset_id: str) -> dict:
             with open(metadata_file) as f:
                 metadata = json.load(f)
 
-        tar_path.unlink(missing_ok=True)
-
         analysis = {}
         if xyz_files:
             analysis = analyze_xyz_files(xyz_files)
@@ -82,8 +80,9 @@ def download_dataset(dataset_id: str) -> dict:
     except requests.exceptions.HTTPError as e:
         return {"success": False, "error": f"HTTP error: {e}"}
     except Exception as e:
-        tar_path.unlink(missing_ok=True)
         return {"success": False, "error": str(e)}
+    finally:
+        tar_path.unlink(missing_ok=True)
 
 
 def _suggest_next_step(analysis: dict) -> str:

@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 
 
@@ -17,10 +18,15 @@ def _env_str(key: str, default: str) -> str:
 COLABFIT_BASE_URL = os.environ.get(
     "COLABFIT_BASE_URL", "https://materials.colabfit.org"
 )
-COLABFIT_AUTH = (
-    os.environ.get("COLABFIT_AUTH_USER", "mcp-tool"),
-    os.environ.get("COLABFIT_AUTH_PASS", "mcp-secret"),
-)
+
+_auth_user = os.environ.get("COLABFIT_AUTH_USER")
+_auth_pass = os.environ.get("COLABFIT_AUTH_PASS")
+if not _auth_user or not _auth_pass:
+    warnings.warn(
+        "COLABFIT_AUTH_USER / COLABFIT_AUTH_PASS not set; using default credentials.",
+        stacklevel=2,
+    )
+COLABFIT_AUTH = (_auth_user or "mcp-tool", _auth_pass or "mcp-secret")
 
 DATA_ROOT = Path(os.environ.get("COLABFIT_DATA_ROOT", str(Path.home() / "colabfit")))
 DOWNLOAD_DIR = DATA_ROOT / "datasets"

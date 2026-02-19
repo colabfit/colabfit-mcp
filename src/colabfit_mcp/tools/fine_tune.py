@@ -69,7 +69,7 @@ def fine_tune_mace(
     model_dir = MODEL_DIR / model_name
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    defaults = FINE_TUNE_DEFAULTS.copy()
+    defaults = FINE_TUNE_DEFAULTS
     cmd = [
         "mace_run_train",
         f"--name={model_name}",
@@ -116,8 +116,6 @@ def fine_tune_mace(
             )
 
             for line in iter(process.stdout.readline, ""):
-                if not line:
-                    break
                 log.write(line)
                 print(line, end="", file=sys.stderr)
 
@@ -155,12 +153,13 @@ def fine_tune_mace(
         }
     except subprocess.TimeoutExpired:
         process.kill()
-        process.stdout.read()
+        if process.stdout:
+            process.stdout.read()
         process.wait()
         return {
             "success": False,
-            "error": "Training timed out (2 hour limit). "
-            "Try reducing max_num_epochs.",
+            "error": "Training timed out (2 hour limit). Try reducing max_num_epochs.",
+            "log_file": str(log_file),
         }
     except FileNotFoundError:
         return {

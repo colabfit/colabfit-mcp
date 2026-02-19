@@ -1,7 +1,7 @@
 import shutil
+import subprocess
 
 from colabfit_mcp.config import DOWNLOAD_DIR, MODEL_DIR
-# from colabfit_mcp.config import MONGODB_HOST, MONGODB_PORT
 
 
 def check_status() -> dict:
@@ -17,7 +17,6 @@ def check_status() -> dict:
     status = {
         "gpu": _gpu_info(),
         "packages": _package_versions(),
-        # "mongodb": _check_mongodb(),
         "disk": _disk_info(),
         "models": _list_dir(MODEL_DIR),
         "datasets": _list_dir(DOWNLOAD_DIR),
@@ -51,7 +50,6 @@ def _package_versions() -> dict:
             versions[pkg] = "not installed"
 
     try:
-        import subprocess
         result = subprocess.run(
             ["kim-api-collections-management", "--version"],
             capture_output=True,
@@ -63,21 +61,6 @@ def _package_versions() -> dict:
         versions["kim-api"] = "not installed"
 
     return versions
-
-
-# def _check_mongodb() -> dict:
-#     try:
-#         from pymongo import MongoClient
-#         client = MongoClient(
-#             MONGODB_HOST, MONGODB_PORT, serverSelectionTimeoutMS=3000
-#         )
-#         client.admin.command("ping")
-#         client.close()
-#         return {"connected": True, "host": MONGODB_HOST, "port": MONGODB_PORT}
-#     except ImportError:
-#         return {"connected": False, "note": "pymongo not installed"}
-#     except Exception as e:
-#         return {"connected": False, "error": str(e)}
 
 
 def _disk_info() -> dict:

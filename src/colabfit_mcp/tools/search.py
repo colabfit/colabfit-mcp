@@ -57,6 +57,7 @@ def search_datasets(
         data = response.json()
         total = len(data)
         total_pages = (total + page_size - 1) // page_size
+        # Pagination is applied client-side; the API always returns the full result set.
         results = data[start:end]
 
         return {
@@ -66,6 +67,7 @@ def search_datasets(
             "page": page,
             "total_pages": total_pages,
             "total_results": total,
+            "pagination_note": "Results are sliced client-side from the full API response.",
             "next_step": (
                 "Use download_dataset with a dataset_id to download "
                 "training data, then fine_tune_mace to train a model."

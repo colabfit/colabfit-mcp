@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from colabfit_mcp.tools.local_datasets import check_local_datasets
 
 
@@ -80,7 +82,19 @@ def resolve_train_file(
 
     if not best.get("xyz_files"):
         return None, {"success": False, "error": "Dataset has no xyz files."}
-    train_file = best["xyz_files"][0]
+
+    xyz_files = best["xyz_files"]
+    if len(xyz_files) == 1:
+        train_file = xyz_files[0]
+    else:
+        combined_path = Path(best["output_dir"]) / "combined.extxyz"
+        if not combined_path.exists():
+            with open(combined_path, "wb") as out:
+                for src in xyz_files:
+                    with open(src, "rb") as f:
+                        out.write(f.read())
+        train_file = str(combined_path)
+
     return train_file, {
         "success": True,
         "dataset_id": best["dataset_id"],

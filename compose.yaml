@@ -10,9 +10,6 @@ services:
     env_file:
       - path: .env
         required: false
-    # environment:
-    #   MONGODB_HOST: mongodb
-    #   MONGODB_PORT: "27017"
     volumes:
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/models:/home/mcpuser/colabfit/models
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/datasets:/home/mcpuser/colabfit/datasets
@@ -26,15 +23,3 @@ services:
               count: 1
               capabilities: [gpu]
 
-  # mongodb:
-  #   image: mongo:8.0
-  #   volumes:
-  #     - mongodata:/data/db
-  #   healthcheck:
-  #     test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-
-# volumes:
-#   mongodata:

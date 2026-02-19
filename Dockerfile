@@ -58,14 +58,11 @@ RUN groupadd -g ${GROUP_ID} mcpuser && \
 COPY --from=builder /usr/local /usr/local
 COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
 COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
-COPY --from=builder /root/.cache /home/mcpuser/.cache
+COPY --from=builder /root/.cache/mace /home/mcpuser/.cache/mace
 
 RUN ldconfig && \
     mkdir -p /home/mcpuser/colabfit/models /home/mcpuser/colabfit/datasets /home/mcpuser/colabfit/model_output && \
     chown -R mcpuser:mcpuser /home/mcpuser
-
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER mcpuser
 WORKDIR /home/mcpuser
@@ -73,4 +70,4 @@ WORKDIR /home/mcpuser
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python3 -c "import colabfit_mcp; print('ok')" || exit 1
 
-ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT ["colabfit-mcp"]

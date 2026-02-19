@@ -1,18 +1,6 @@
 from pathlib import Path
 
 
-def extract_elements(xyz_path: Path) -> list[str]:
-    elements = set()
-    with open(xyz_path) as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) >= 4:
-                elem = parts[0]
-                if elem.isalpha() and len(elem) <= 2:
-                    elements.add(elem)
-    return sorted(elements)
-
-
 def analyze_xyz(xyz_path: Path) -> dict:
     """Analyze a single XYZ/extxyz file for training suitability."""
     elements = set()
@@ -23,26 +11,22 @@ def analyze_xyz(xyz_path: Path) -> dict:
     atom_count = 0
 
     with open(xyz_path) as f:
-        lines = f.readlines()
+        while True:
+            header = f.readline()
+            if not header:
+                break
+            line = header.strip()
+            if not line:
+                continue
+            try:
+                n_atoms = int(line)
+            except ValueError:
+                continue
 
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line:
-            i += 1
-            continue
+            config_count += 1
+            atom_count += n_atoms
 
-        try:
-            n_atoms = int(line)
-        except ValueError:
-            i += 1
-            continue
-
-        config_count += 1
-        atom_count += n_atoms
-
-        if i + 1 < len(lines):
-            comment = lines[i + 1]
+            comment = f.readline()
             if "energy" in comment.lower():
                 has_energy = True
             if "stress" in comment.lower():
@@ -50,14 +34,12 @@ def analyze_xyz(xyz_path: Path) -> dict:
             if "forces" in comment.lower():
                 has_forces = True
 
-        for j in range(i + 2, min(i + 2 + n_atoms, len(lines))):
-            parts = lines[j].strip().split()
-            if parts and parts[0].isalpha() and len(parts[0]) <= 2:
-                elements.add(parts[0])
-            if len(parts) > 4:
-                has_forces = True
-
-        i += 2 + n_atoms
+            for _ in range(n_atoms):
+                parts = f.readline().strip().split()
+                if parts and parts[0].isalpha() and len(parts[0]) <= 2:
+                    elements.add(parts[0])
+                if len(parts) > 4:
+                    has_forces = True
 
     return {
         "elements": sorted(elements),
