@@ -25,6 +25,7 @@ COLABFIT_AUTH = (
 DATA_ROOT = Path(os.environ.get("COLABFIT_DATA_ROOT", str(Path.home() / "colabfit")))
 DOWNLOAD_DIR = DATA_ROOT / "datasets"
 MODEL_DIR = DATA_ROOT / "models"
+MODEL_OUTPUT_DIR = DATA_ROOT / "model_output"
 
 
 FOUNDATION_MODEL = os.environ.get("FOUNDATION_MODEL", "small")

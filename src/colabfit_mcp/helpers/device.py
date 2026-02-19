@@ -1,4 +1,4 @@
-def detect_device() -> str:
+def detect_device() -> tuple[str, str | None]:
     try:
         import torch
         if torch.cuda.is_available():

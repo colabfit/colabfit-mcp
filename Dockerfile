@@ -61,7 +61,7 @@ COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
 COPY --from=builder /root/.cache /home/mcpuser/.cache
 
 RUN ldconfig && \
-    mkdir -p /home/mcpuser/colabfit/models /home/mcpuser/colabfit/datasets && \
+    mkdir -p /home/mcpuser/colabfit/models /home/mcpuser/colabfit/datasets /home/mcpuser/colabfit/model_output && \
     chown -R mcpuser:mcpuser /home/mcpuser
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
