@@ -1,11 +1,4 @@
 services:
-  init-data-dirs:
-    image: alpine:latest
-    volumes:
-      - ${COLABFIT_DATA_ROOT:-./colabfit_data}:/data
-    command: sh -c "mkdir -p /data/models /data/datasets && chown -R ${USER_ID:-1000}:${GROUP_ID:-1000} /data && chmod -R 755 /data && echo 'Data directories ready'"
-    restart: "no"
-
   server:
     build:
       context: .
@@ -14,11 +7,6 @@ services:
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
     stdin_open: true
-    depends_on:
-      init-data-dirs:
-        condition: service_completed_successfully
-      # mongodb:
-      #   condition: service_healthy
     env_file:
       - path: .env
         required: false

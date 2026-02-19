@@ -102,9 +102,9 @@ def train_mace(
         f"--checkpoints_dir={model_dir}",
     ]
     if defaults["pin_memory"]:
-        cmd.append("--pin_memory")
+        cmd.append("--pin_memory=True")
     if device == "cuda":
-        cmd.append("--enable_cueq")
+        cmd.append("--enable_cueq=True")
     if defaults["swa"]:
         cmd.append("--swa")
     if defaults["ema"]:
