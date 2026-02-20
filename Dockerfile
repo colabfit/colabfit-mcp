@@ -61,8 +61,10 @@ COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
 COPY --from=builder /root/.cache/mace /home/mcpuser/.cache/mace
 
 RUN ldconfig && \
-    mkdir -p /home/mcpuser/colabfit/models /home/mcpuser/colabfit/datasets /home/mcpuser/colabfit/model_output && \
-    chown -R mcpuser:mcpuser /home/mcpuser
+    mkdir -p /home/mcpuser/colabfit/models /home/mcpuser/colabfit/datasets /home/mcpuser/colabfit/inference_output && \
+    chown -R mcpuser:mcpuser /home/mcpuser && \
+    chmod 755 /home/mcpuser && \
+    chmod -R a+rX /home/mcpuser/.cache
 
 USER mcpuser
 WORKDIR /home/mcpuser

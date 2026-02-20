@@ -6,6 +6,7 @@ services:
       args:
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     stdin_open: true
     env_file:
       - path: .env
@@ -13,13 +14,6 @@ services:
     volumes:
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/models:/home/mcpuser/colabfit/models
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/datasets:/home/mcpuser/colabfit/datasets
-      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/model_output:/home/mcpuser/colabfit/model_output
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/inference_output:/home/mcpuser/colabfit/inference_output
     shm_size: "2gb"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 

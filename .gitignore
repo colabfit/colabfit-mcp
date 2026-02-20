@@ -29,6 +29,7 @@ Thumbs.db
 
 pg_credentials.json
 .claude
+.mcp.json
 .ruff_cache/
 relax.traj
 vib/

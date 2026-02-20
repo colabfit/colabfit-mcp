@@ -1,3 +1,4 @@
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -13,7 +14,7 @@ from colabfit_mcp.config import (
 from colabfit_mcp.tools.dataset_resolver import resolve_train_file
 from colabfit_mcp.helpers.device import detect_device
 from colabfit_mcp.helpers.training import diagnose_failure, parse_training_log
-from colabfit_mcp.helpers.xyz import analyze_xyz
+from colabfit_mcp.helpers.xyz import analyze_xyz, prepare_training_file
 
 
 def train_mace(
@@ -39,7 +40,7 @@ def train_mace(
         r_max: Cutoff radius in Angstroms (default 5.0).
         max_num_epochs: Maximum training epochs (default 100).
         batch_size: Training batch size (default from config MACE_BATCH_SIZE, 16).
-        device: "cuda" or "cpu" (auto-detected if None).
+        device: "cuda", "mps", or "cpu" (auto-detected if None).
         elements: Chemical elements for dataset matching when
             train_file is not provided (e.g. ["Si", "O"]).
 
@@ -61,12 +62,21 @@ def train_mace(
 
     if device is None:
         device, _ = detect_device()
+    elif device not in {"cuda", "mps", "cpu"}:
+        return {"success": False, "error": f"Invalid device {device!r}. Must be 'cuda', 'mps', or 'cpu'."}
 
     analysis = analyze_xyz(train_path)
     loss = "stress" if analysis.get("has_stress") else "weighted"
 
     model_dir = MODEL_DIR / model_name
     model_dir.mkdir(parents=True, exist_ok=True)
+
+    train_path = prepare_training_file(
+        train_path,
+        model_dir / "train_data.extxyz",
+        energy_key=COLABFIT_ENERGY_KEY,
+        forces_key=COLABFIT_FORCES_KEY,
+    )
 
     defaults = TRAIN_DEFAULTS
     batch_size = batch_size or defaults["batch_size"]
@@ -79,7 +89,7 @@ def train_mace(
     cmd = [
         "mace_run_train",
         f"--name={model_name}",
-        f"--train_file={train_file}",
+        f"--train_file={train_path}",
         f"--valid_fraction={defaults['valid_fraction']}",
         "--model=MACE",
         f"--hidden_irreps={hidden_irreps}",
@@ -101,9 +111,9 @@ def train_mace(
         f"--results_dir={model_dir}",
         f"--checkpoints_dir={model_dir}",
     ]
-    if defaults["pin_memory"]:
-        cmd.append("--pin_memory=True")
     if device == "cuda":
+        cmd.append("--pin_memory=True")
+    if device == "cuda" and importlib.util.find_spec("cuequivariance") is not None:
         cmd.append("--enable_cueq=True")
     if defaults["swa"]:
         cmd.append("--swa")

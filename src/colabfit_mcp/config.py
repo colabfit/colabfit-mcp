@@ -31,13 +31,13 @@ COLABFIT_AUTH = (_auth_user or "mcp-tool", _auth_pass or "mcp-secret")
 DATA_ROOT = Path(os.environ.get("COLABFIT_DATA_ROOT", str(Path.home() / "colabfit")))
 DOWNLOAD_DIR = DATA_ROOT / "datasets"
 MODEL_DIR = DATA_ROOT / "models"
-MODEL_OUTPUT_DIR = DATA_ROOT / "model_output"
+INFERENCE_DIR = DATA_ROOT / "inference_output"
 
 
 FOUNDATION_MODEL = os.environ.get("FOUNDATION_MODEL", "small")
 
-COLABFIT_ENERGY_KEY = "energy"
-COLABFIT_FORCES_KEY = "forces"
+COLABFIT_ENERGY_KEY = "REF_energy"
+COLABFIT_FORCES_KEY = "REF_forces"
 COLABFIT_STRESS_KEY = "cauchy_stress"
 
 FINE_TUNE_DEFAULTS = {
@@ -47,7 +47,6 @@ FINE_TUNE_DEFAULTS = {
     "max_num_epochs": 50,
     "default_dtype": _env_str("MACE_DTYPE", "float32"),
     "num_workers": _env_int("MACE_NUM_WORKERS", "4"),
-    "pin_memory": True,
     "seed": 42,
     "valid_fraction": 0.1,
     "swa": True,
@@ -65,7 +64,6 @@ TRAIN_DEFAULTS = {
     "max_num_epochs": 100,
     "default_dtype": _env_str("MACE_DTYPE", "float32"),
     "num_workers": _env_int("MACE_NUM_WORKERS", "4"),
-    "pin_memory": True,
     "seed": 42,
     "valid_fraction": 0.1,
     "swa": True,

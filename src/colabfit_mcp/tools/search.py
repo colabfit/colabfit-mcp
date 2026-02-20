@@ -31,13 +31,13 @@ def search_datasets(
     Returns:
         Dict with results, pagination info, and next_step guidance.
     """
-    query = {}
+    required_properties = {"energy", "atomic_forces"}
+    merged_properties = required_properties | set(property_types or [])
+    query = {"property_types": sorted(merged_properties)}
     if text:
         query["description"] = text
     if elements:
         query["elements"] = elements
-    if property_types:
-        query["property_types"] = property_types
     if software:
         query["software"] = software
     if advanced_filters:

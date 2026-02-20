@@ -1,3 +1,4 @@
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -14,7 +15,7 @@ from colabfit_mcp.config import (
 from colabfit_mcp.tools.dataset_resolver import resolve_train_file
 from colabfit_mcp.helpers.device import detect_device
 from colabfit_mcp.helpers.training import diagnose_failure, parse_training_log
-from colabfit_mcp.helpers.xyz import analyze_xyz
+from colabfit_mcp.helpers.xyz import analyze_xyz, prepare_training_file
 
 
 def fine_tune_mace(
@@ -40,7 +41,7 @@ def fine_tune_mace(
             If None, auto-discovers from local datasets.
         model_name: Name for the fine-tuned model (default "colabfit_mace").
         max_num_epochs: Maximum training epochs (default 50).
-        device: "cuda" or "cpu" (auto-detected if None).
+        device: "cuda", "mps", or "cpu" (auto-detected if None).
         elements: Chemical elements for dataset matching when
             train_file is not provided (e.g. ["Si", "O"]).
 
@@ -62,6 +63,8 @@ def fine_tune_mace(
 
     if device is None:
         device, _ = detect_device()
+    elif device not in {"cuda", "mps", "cpu"}:
+        return {"success": False, "error": f"Invalid device {device!r}. Must be 'cuda', 'mps', or 'cpu'."}
 
     analysis = analyze_xyz(train_path)
     loss = "stress" if analysis.get("has_stress") else "weighted"
@@ -69,11 +72,18 @@ def fine_tune_mace(
     model_dir = MODEL_DIR / model_name
     model_dir.mkdir(parents=True, exist_ok=True)
 
+    train_path = prepare_training_file(
+        train_path,
+        model_dir / "train_data.extxyz",
+        energy_key=COLABFIT_ENERGY_KEY,
+        forces_key=COLABFIT_FORCES_KEY,
+    )
+
     defaults = FINE_TUNE_DEFAULTS
     cmd = [
         "mace_run_train",
         f"--name={model_name}",
-        f"--train_file={train_file}",
+        f"--train_file={train_path}",
         f"--valid_fraction={defaults['valid_fraction']}",
         f"--foundation_model={FOUNDATION_MODEL}",
         "--E0s=foundation",
@@ -93,9 +103,9 @@ def fine_tune_mace(
         f"--results_dir={model_dir}",
         f"--checkpoints_dir={model_dir}",
     ]
-    if defaults["pin_memory"]:
-        cmd.append("--pin_memory=True")
     if device == "cuda":
+        cmd.append("--pin_memory=True")
+    if device == "cuda" and importlib.util.find_spec("cuequivariance") is not None:
         cmd.append("--enable_cueq=True")
     if defaults["swa"]:
         cmd.append("--swa")

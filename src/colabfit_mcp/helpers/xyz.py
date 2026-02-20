@@ -1,6 +1,31 @@
 from pathlib import Path
 
 
+def prepare_training_file(src: Path, dest: Path, energy_key: str, forces_key: str) -> Path:
+    """Rewrite an extxyz file with energy/forces explicitly in atoms.info/arrays.
+
+    ASE >= 3.23 stores `energy=` and `forces=` from extxyz headers in a
+    SinglePointCalculator rather than atoms.info/atoms.arrays. MACE looks
+    in atoms.info[energy_key] first; when the key is absent it logs ERROR
+    and falls back to the calculator. This function writes a new file where
+    the values are present under the expected keys so MACE finds them cleanly.
+    """
+    from ase.io import read, write
+
+    atoms_list = read(str(src), index=":")
+    for atoms in atoms_list:
+        try:
+            atoms.info[energy_key] = float(atoms.get_potential_energy())
+        except Exception:
+            pass
+        try:
+            atoms.arrays[forces_key] = atoms.get_forces()
+        except Exception:
+            pass
+    write(str(dest), atoms_list)
+    return dest
+
+
 def analyze_xyz(xyz_path: Path) -> dict:
     """Analyze a single XYZ/extxyz file for training suitability."""
     elements = set()

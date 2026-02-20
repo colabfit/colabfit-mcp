@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from colabfit_mcp.config import MODEL_OUTPUT_DIR
+from colabfit_mcp.config import INFERENCE_DIR
 from colabfit_mcp.helpers.device import detect_device
 
 
@@ -53,7 +53,7 @@ def use_model(
         lattice_constant: Optional lattice constant in Angstroms passed to bulk().
         calculations: Subset of ["energy", "forces", "stress", "relax"].
             Defaults to ["energy", "forces"].
-        device: "cuda" or "cpu". Auto-detected if None.
+        device: "cuda", "mps", or "cpu". Auto-detected if None.
         mode: "run" to execute and return results, "snippet" to return a
             copy-pasteable Python script.
 
@@ -115,10 +115,10 @@ def _write_extxyz(atoms, formula: str, crystal_structure: str | None) -> Path:
     """Write atoms with calculator results to an extxyz file, return the path."""
     from ase.io import write
 
-    MODEL_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    INFERENCE_DIR.mkdir(parents=True, exist_ok=True)
     struct_tag = (crystal_structure or "molecule").lower()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = MODEL_OUTPUT_DIR / f"{formula}_{struct_tag}_{timestamp}.extxyz"
+    output_path = INFERENCE_DIR / f"{formula}_{struct_tag}_{timestamp}.extxyz"
     write(str(output_path), atoms, format="extxyz")
     return output_path
 
@@ -157,13 +157,15 @@ def _run_calculations(
         if "relax" in calculations:
             from ase.optimize import BFGS
             opt = BFGS(atoms, logfile=None)
-            opt.run(fmax=0.01, steps=500)
+            converged = opt.run(fmax=0.01, steps=500)
+            results["relaxation_converged"] = converged
 
         if "energy" in calculations or "relax" in calculations:
             results["energy_eV"] = atoms.get_potential_energy()
         if "forces" in calculations:
             results["forces_eV_per_Ang"] = atoms.get_forces().tolist()
         if "stress" in calculations:
+            # ASE uses compressive-positive convention; divide by eV/Å³→GPa factor
             results["stress_GPa"] = (atoms.get_stress(voigt=True) / 160.21766).tolist()
         if "relax" in calculations:
             results["relaxed_positions"] = atoms.get_positions().tolist()

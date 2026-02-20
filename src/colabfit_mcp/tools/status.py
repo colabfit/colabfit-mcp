@@ -27,17 +27,24 @@ def check_status() -> dict:
 def _gpu_info() -> dict:
     try:
         import torch
-        if torch.cuda.is_available():
-            return {
-                "available": True,
-                "device": torch.cuda.get_device_name(0),
-                "memory_gb": round(
-                    torch.cuda.get_device_properties(0).total_memory / 1e9, 1
-                ),
-            }
-        return {"available": False}
     except ImportError:
         return {"available": False, "note": "torch not installed"}
+
+    from colabfit_mcp.helpers.device import detect_device
+
+    device, name = detect_device()
+    if device == "cuda":
+        return {
+            "available": True,
+            "type": "cuda",
+            "device": name,
+            "memory_gb": round(
+                torch.cuda.get_device_properties(0).total_memory / 1e9, 1
+            ),
+        }
+    if device == "mps":
+        return {"available": True, "type": "mps", "device": name}
+    return {"available": False}
 
 
 def _package_versions() -> dict:

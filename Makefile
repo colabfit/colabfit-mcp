@@ -40,7 +40,7 @@ setup:
 		echo "✓ .env file already exists"; \
 	fi
 	@echo "Creating data directories with correct ownership..."
-	@mkdir -p "${COLABFIT_DATA_ROOT}/datasets" "${COLABFIT_DATA_ROOT}/models"
+	@mkdir -p "${COLABFIT_DATA_ROOT}/datasets" "${COLABFIT_DATA_ROOT}/models" "${COLABFIT_DATA_ROOT}/inference_output"
 	@echo "✓ Created data directories in: ${COLABFIT_DATA_ROOT}"
 	@echo ""
 	@echo "Next steps:"
@@ -60,7 +60,7 @@ build:
 
 start: setup
 	@echo "Starting ColabFit MCP services..."
-	USER_ID=${USER_ID} GROUP_ID=${GROUP_ID} docker compose up -d
+	USER_ID=${USER_ID} GROUP_ID=${GROUP_ID} ./start.sh up -d
 	@echo "✓ Services started"
 	@echo ""
 	@echo "View logs with: make logs"
