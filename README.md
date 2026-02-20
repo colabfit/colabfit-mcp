@@ -204,7 +204,6 @@ Subdirectories are created automatically the first time each tool writes data.
 
 - Python 3.10+
 - CUDA 12.x + nvidia drivers (for GPU training; CPU fallback works without CUDA)
-- KIM API: not required; install separately from conda-forge if needed for KIM Portable Models
 
 ## Architecture
 
@@ -212,13 +211,12 @@ Subdirectories are created automatically the first time each tool writes data.
 server container
 ├── MCP server (FastMCP, stdio)
 ├── mace-torch
-├── kim-api (not yet implemented)
 ├── MACE-MP-0 foundation (cached at build time)
 └── Training via mace_run_train
 ```
 
 Container managed by Docker Compose:
-- **server** — MCP server + ML training + KIM packages
+- **server** — MCP server + ML training
 
 ## Environment Variables
 

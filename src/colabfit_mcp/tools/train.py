@@ -171,8 +171,7 @@ def train_mace(
             "metrics": metrics,
             "next_step": (
                 f"Model saved at {model_path}. Training log available at {log_file}. "
-                "Use deploy_model to export as TorchScript and install as a KIM "
-                "Portable Model."
+                "Use use_model to run inference or calculate properties with the trained model."
             ),
         }
     except subprocess.TimeoutExpired:

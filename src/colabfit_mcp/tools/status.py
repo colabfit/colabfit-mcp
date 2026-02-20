@@ -1,5 +1,4 @@
 import shutil
-import subprocess
 
 from colabfit_mcp.config import DOWNLOAD_DIR, MODEL_DIR
 
@@ -7,7 +6,7 @@ from colabfit_mcp.config import DOWNLOAD_DIR, MODEL_DIR
 def check_status() -> dict:
     """Check system status including GPU, packages, and connectivity.
 
-    Returns versions of key packages (torch, mace, kim-api), GPU
+    Returns versions of key packages (torch, mace), GPU
     availability, disk usage, and lists of
     existing models and datasets.
 
@@ -55,17 +54,6 @@ def _package_versions() -> dict:
             versions[pkg] = getattr(mod, "__version__", "installed")
         except ImportError:
             versions[pkg] = "not installed"
-
-    try:
-        result = subprocess.run(
-            ["kim-api-collections-management", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        versions["kim-api"] = result.stdout.strip() or "installed"
-    except Exception:
-        versions["kim-api"] = "not installed"
 
     return versions
 
