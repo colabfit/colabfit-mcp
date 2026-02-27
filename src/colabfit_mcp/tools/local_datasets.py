@@ -1,6 +1,7 @@
 
+import json
+
 from colabfit_mcp.config import DOWNLOAD_DIR
-from colabfit_mcp.helpers.xyz import analyze_xyz_files
 
 
 def check_local_datasets(
@@ -11,8 +12,8 @@ def check_local_datasets(
 
     Scans the local dataset directory for previously downloaded datasets
     and filters by element coverage and available properties. Called
-    automatically by train_mace and fine_tune_mace when no train_file
-    is specified. Can also be called directly to inspect local data.
+    automatically by train_mace when no train_file is specified. Can
+    also be called directly to inspect local data.
 
     Args:
         elements: Chemical elements to filter by (e.g. ["Si", "O"]).
@@ -21,11 +22,19 @@ def check_local_datasets(
             "atomic_forces", "cauchy_stress".
 
     Note:
-        Only subdirectories of the download directory whose names begin with
-        "DS_" (the ColabFit dataset ID prefix) are scanned.
+        All non-hidden subdirectories of the download directory are scanned.
+        The .hf_cache directory (HuggingFace parquet cache) is excluded automatically.
+        Datasets are stored as HuggingFace arrow/parquet cache with a dataset.json
+        metadata file. Directories without a dataset.json are skipped.
+
+        dataset_id in each result is the DS_... id stored in dataset.json.
+
+        train_mace calls this automatically when train_file is None — you do
+        not need to call it manually before training unless you want to inspect
+        what is available.
 
     Returns:
-        Dict with matching datasets, their analysis, and file paths.
+        Dict with matching datasets, their analysis, and metadata file paths.
     """
     if not DOWNLOAD_DIR.is_dir():
         return {
@@ -38,7 +47,7 @@ def check_local_datasets(
 
     dataset_dirs = [
         d for d in sorted(DOWNLOAD_DIR.iterdir())
-        if d.is_dir() and d.name.startswith("DS_")
+        if d.is_dir() and not d.name.startswith(".")
     ]
 
     if not dataset_dirs:
@@ -52,18 +61,20 @@ def check_local_datasets(
 
     all_datasets = []
     for ds_dir in dataset_dirs:
-        xyz_files = sorted(
-            list(ds_dir.rglob("*.extxyz")) + list(ds_dir.rglob("*.xyz"))
-        )
-        if not xyz_files:
+        meta_path = ds_dir / "dataset.json"
+        if not meta_path.exists():
             continue
-
-        analysis = analyze_xyz_files(xyz_files)
+        with open(meta_path) as f:
+            meta = json.load(f)
         all_datasets.append({
-            "dataset_id": ds_dir.name,
+            "dataset_dir": ds_dir.name,
+            "dataset_id": meta.get("dataset_id"),
             "output_dir": str(ds_dir),
-            "xyz_files": [str(f) for f in xyz_files],
-            "analysis": analysis,
+            "hf_id": meta.get("hf_id"),
+            "safe_name": meta.get("safe_name"),
+            "split": meta.get("split", "train"),
+            "dataset_ref": str(meta_path),
+            "analysis": meta.get("analysis", {}),
         })
 
     matches = _filter_datasets(all_datasets, elements, property_types)
@@ -71,7 +82,7 @@ def check_local_datasets(
     if matches:
         next_step = (
             f"Found {len(matches)} matching local dataset(s). "
-            "Use fine_tune_mace or train_mace with the xyz_files paths."
+            "Use train_mace to train a model."
         )
     else:
         next_step = (

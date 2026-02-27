@@ -1,23 +1,23 @@
-from pathlib import Path
-
+from colabfit_mcp.config import DOWNLOAD_DIR
 from colabfit_mcp.tools.local_datasets import check_local_datasets
 
 
-def resolve_train_file(
+def resolve_dataset(
     elements: list[str] | None = None,
-) -> tuple[str | None, dict]:
-    """Resolve a training file from locally available datasets.
+) -> tuple[dict | None, dict]:
+    """Resolve a local HuggingFace-backed dataset for training.
 
     Scans local datasets for element and property matches.
-    Returns the best xyz file path if a suitable dataset is found,
-    or None with a summary of what's available.
+    Returns metadata for the best matching dataset.
 
     Args:
         elements: Chemical elements to match (e.g. ["Si", "O"]).
 
     Returns:
-        Tuple of (train_file_path, info_dict).
-        On success: (path_str, dataset_info).
+        Tuple of (dataset_info, info_dict).
+        On success: (metadata_dict, details).
+            metadata_dict has: hf_id, safe_name, split, output_dir,
+            dataset_id, analysis, hf_cache_dir.
         On failure: (None, summary_with_guidance).
     """
     result = check_local_datasets(
@@ -29,16 +29,16 @@ def resolve_train_file(
     suitable = [m for m in matches if m["analysis"].get("suitable_for_training")]
 
     if not suitable:
-        local_summary = []
-        for m in result.get("matches", []):
-            local_summary.append({
-                "dataset_id": m["dataset_id"],
+        local_summary = [
+            {
+                "dataset_id": m.get("dataset_id"),
                 "elements": m["analysis"].get("elements", []),
                 "n_configs": m["analysis"].get("n_configs", 0),
                 "has_energy": m["analysis"].get("has_energy", False),
                 "has_forces": m["analysis"].get("has_forces", False),
-            })
-
+            }
+            for m in result.get("matches", [])
+        ]
         return None, {
             "success": False,
             "local_datasets": local_summary,
@@ -60,14 +60,14 @@ def resolve_train_file(
             elements_match = "superset" if required.issubset(available) else "partial"
 
     if elements_match == "partial":
-        local_summary = []
-        for m in suitable:
-            local_summary.append({
-                "dataset_id": m["dataset_id"],
+        local_summary = [
+            {
+                "dataset_id": m.get("dataset_id"),
                 "elements": m["analysis"].get("elements", []),
                 "n_configs": m["analysis"].get("n_configs", 0),
-            })
-
+            }
+            for m in suitable
+        ]
         return None, {
             "success": False,
             "local_datasets": local_summary,
@@ -80,25 +80,23 @@ def resolve_train_file(
             ),
         }
 
-    if not best.get("xyz_files"):
-        return None, {"success": False, "error": "Dataset has no xyz files."}
+    if not best.get("hf_id"):
+        return None, {"success": False, "error": "Dataset has no HuggingFace ID."}
 
-    xyz_files = best["xyz_files"]
-    if len(xyz_files) == 1:
-        train_file = xyz_files[0]
-    else:
-        combined_path = Path(best["output_dir"]) / "combined.extxyz"
-        if not combined_path.exists():
-            with open(combined_path, "wb") as out:
-                for src in xyz_files:
-                    with open(src, "rb") as f:
-                        out.write(f.read())
-        train_file = str(combined_path)
+    dataset_info = {
+        "hf_id": best["hf_id"],
+        "safe_name": best.get("safe_name") or best["dataset_dir"],
+        "split": best.get("split", "train"),
+        "output_dir": best["output_dir"],
+        "dataset_id": best["dataset_id"],
+        "analysis": best["analysis"],
+        "hf_cache_dir": str(DOWNLOAD_DIR / ".hf_cache"),
+    }
 
-    return train_file, {
+    return dataset_info, {
         "success": True,
         "dataset_id": best["dataset_id"],
-        "train_file": train_file,
+        "hf_id": best["hf_id"],
         "elements": best["analysis"].get("elements", []),
         "n_configs": best["analysis"].get("n_configs", 0),
         "elements_match": elements_match,

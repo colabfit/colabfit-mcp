@@ -1,20 +1,23 @@
-import importlib.util
-import subprocess
-import sys
 from pathlib import Path
 
+from loguru import logger
+
 from colabfit_mcp.config import (
-    COLABFIT_ENERGY_KEY,
-    COLABFIT_FORCES_KEY,
-    COLABFIT_STRESS_KEY,
+    KLIFF_DEFAULTS,
     MODEL_DIR,
-    TRAIN_DEFAULTS,
-    TRAINING_TIMEOUT,
 )
-from colabfit_mcp.tools.dataset_resolver import resolve_train_file
 from colabfit_mcp.helpers.device import detect_device
-from colabfit_mcp.helpers.training import diagnose_failure, parse_training_log
-from colabfit_mcp.helpers.xyz import analyze_xyz, prepare_training_file
+from colabfit_mcp.helpers.kliff_trainer import get_kliff_trainer_class, run_forward_pass_check
+from colabfit_mcp.helpers.training import (
+    build_mace_klay_config,
+    build_training_manifest,
+    diagnose_failure,
+    estimate_avg_num_neighbors,
+    parse_kliff_metrics,
+    write_mace_yaml,
+)
+from colabfit_mcp.helpers.kliff_utils import analyze_configs, fix_species_types
+from colabfit_mcp.tools.dataset_resolver import resolve_dataset
 
 
 def train_mace(
@@ -25,169 +28,313 @@ def train_mace(
     batch_size: int | None = None,
     device: str = None,
     elements: list[str] | None = None,
+    n_layers: int = 2,
+    avg_num_neighbors: float | None = None,
 ) -> dict:
-    """Train a MACE model from scratch on XYZ data.
+    """Train a MACE-style KLAY model using KLIFF on XYZ data.
 
     When train_file is omitted, automatically discovers suitable datasets
     in the local download directory. If a matching dataset is found, it is
-    used directly. If no match or only a partial match is found, returns
-    guidance to search and download from ColabFit.
+    loaded directly from the HuggingFace arrow cache. If no match or only a
+    partial match is found, returns guidance to search and download from ColabFit.
+
+    IMPORTANT: All file paths are inside the Docker container filesystem.
+    Datasets are under /home/mcpuser/colabfit/datasets/.
+    Trained models are saved under /home/mcpuser/colabfit/models/.
+
+    Architecture notes:
+        The model is a KLAY graph network with MACE-style equivariant convolutions
+        built by klay.builder.build_model from a dict config. The exact config is
+        written to <model_dir>/mace_model.yaml for reproducibility.
+
+        n_layers sets the number of MACE conv layers in the *model*. The graph
+        transform (RadialGraph) always uses n_layers=1 (single-hop), so all conv
+        layers share the same edge_index0. This is correct for MACE — do not
+        confuse model n_layers with RadialGraph n_layers.
+
+        TorchScript export fails for this architecture because OneHotAtomEncoding
+        calls torch.get_default_dtype(), which TorchScript cannot trace. The model
+        is saved instead via torch.save(model, "model.pt"), which use_model loads
+        with torch.load(..., weights_only=False). This is handled automatically.
 
     Args:
-        train_file: Path to training XYZ file (extxyz format).
-            If None, auto-discovers from local datasets.
+        train_file: Path to an existing extxyz file inside the container to use
+            as training data. If None, auto-discovers from local downloaded datasets.
         model_name: Name for the trained model (default "colabfit_mace").
-        r_max: Cutoff radius in Angstroms (default 5.0).
-        max_num_epochs: Maximum training epochs (default 100).
-        batch_size: Training batch size (default from config MACE_BATCH_SIZE, 16).
+        r_max: Cutoff radius in Angstroms (default 5.0). Typical: 4-6 Å. Start
+            with ~1.5x the nearest-neighbor distance. Larger = more context,
+            higher cost.
+        max_num_epochs: Maximum training epochs (default 100). Use 100-300 for
+            scratch training; 50-100 for fine-tuning.
+        batch_size: Configurations per gradient step (default 4). Reduce to 1-2
+            for GPU OOM errors.
         device: "cuda", "mps", or "cpu" (auto-detected if None).
         elements: Chemical elements for dataset matching when
             train_file is not provided (e.g. ["Si", "O"]).
+        n_layers: Number of MACE interaction layers (default 2). 2 is adequate
+            for most systems; use 3 for complex multi-element or high-accuracy
+            targets. Each additional layer increases cost significantly.
+        avg_num_neighbors: Expected number of neighbors within r_max. If None,
+            auto-estimated by sampling up to 20 configs from the training dataset
+            using RadialGraph — no need to supply this manually. Override only
+            if the estimate is known to be wrong (e.g., very small test dataset).
+            Typical values: 10-40 for solid-state, 5-15 for molecular systems.
 
     Returns:
-        Dict with model path, training metrics, and next_step guidance.
+        Dict with keys:
+            model_path: KIM model subdirectory (Name__MO_000000000000_000/).
+                Pass this to use_model — NOT model_dir.
+            model_dir: Parent directory containing model.pt, mace_model.yaml,
+                and KLIFF training logs.
+            yaml_path: Path to mace_model.yaml (KLAY architecture config).
+            kim_model_name, device, architecture, elements, metrics, next_step.
     """
-    if train_file is None:
-        resolved_path, info = resolve_train_file(elements=elements)
-        if resolved_path is None:
-            return info
-        train_file = resolved_path
-
-    train_path = Path(train_file)
-    if not train_path.exists():
+    try:
+        from kliff.dataset import Dataset
+        import torch
+        from omegaconf import OmegaConf
+        from klay.builder import build_model
+    except ImportError as e:
         return {
             "success": False,
-            "error": f"Training file not found: {train_file}",
+            "error": f"Missing dependency: {e}. Install with pip install '.[full]'.",
         }
+
+    # Set up model directory and log file early so all phases are captured in training.log
+    model_dir = MODEL_DIR / model_name
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    sink_id = logger.add(
+        str(model_dir / "training.log"),
+        format="{time:HH:mm:ss} | {level:<8} | {message}",
+        level="DEBUG",
+        mode="w",
+        colorize=False,
+    )
+    logger.info(f"=== Training: {model_name} ===")
+
+    if train_file is None:
+        dataset_info, info = resolve_dataset(elements=elements)
+        if dataset_info is None:
+            logger.remove(sink_id)
+            return info
+
+        logger.info(f"Loading dataset from HuggingFace: {dataset_info['hf_id']}")
+        try:
+            kliff_dataset = Dataset.from_huggingface(
+                dataset_info["hf_id"],
+                split=dataset_info["split"],
+                forces_key="atomic_forces",
+                cache_dir=dataset_info["hf_cache_dir"],
+            )
+        except Exception as e:
+            logger.remove(sink_id)
+            return {"success": False, "error": f"Failed to load dataset from HuggingFace: {e}"}
+
+        fix_species_types(kliff_dataset.configs)
+        dataset_elements = elements or dataset_info["analysis"].get("elements", [])
+        dataset_path = Path(dataset_info["output_dir"])
+
+    else:
+        train_path = Path(train_file)
+        if not train_path.exists():
+            logger.remove(sink_id)
+            return {"success": False, "error": f"Training file not found: {train_file}"}
+
+        logger.info(f"Loading dataset from file: {train_file}")
+        try:
+            kliff_dataset = Dataset.from_ase(
+                path=str(train_path),
+                energy_key="energy",
+                forces_key="forces",
+            )
+        except Exception as e:
+            logger.remove(sink_id)
+            return {"success": False, "error": f"Failed to load dataset: {e}"}
+
+        analysis = analyze_configs(kliff_dataset.configs)
+        if not analysis.get("suitable_for_training"):
+            logger.remove(sink_id)
+            return {
+                "success": False,
+                "error": "Dataset not suitable for training (missing energy or forces).",
+                "analysis": analysis,
+            }
+
+        dataset_elements = elements or analysis.get("elements", [])
+        dataset_path = train_path.parent
+
+    # Overwrite with actual loaded count — metadata can be stale and cause KLIFF
+    # TrainerError when train_size + val_size > len(dataset)
+    n_configs = len(kliff_dataset.configs)
+    logger.info(f"Dataset loaded: {n_configs} configs, elements: {dataset_elements}")
+
+    if not dataset_elements:
+        logger.remove(sink_id)
+        return {"success": False, "error": "Could not determine elements from dataset."}
+
+    defaults = KLIFF_DEFAULTS
+    dtype = torch.float32 if defaults["dtype"] == "float32" else torch.float64
+    if dtype == torch.float32:
+        import numpy as np
+
+        for config in kliff_dataset.configs:
+            if config._forces is not None:
+                config._forces = config._forces.astype(np.float32)
+            if config._coords is not None:
+                config._coords = config._coords.astype(np.float32)
+        c0 = kliff_dataset.configs[0]
+        logger.info(
+            f"Float32 cast: coords dtype={c0._coords.dtype}"
+            f" forces dtype={c0._forces.dtype if c0._forces is not None else 'none'}"
+        )
 
     if device is None:
         device, _ = detect_device()
     elif device not in {"cuda", "mps", "cpu"}:
-        return {"success": False, "error": f"Invalid device {device!r}. Must be 'cuda', 'mps', or 'cpu'."}
+        logger.remove(sink_id)
+        return {
+            "success": False,
+            "error": f"Invalid device {device!r}. Must be 'cuda', 'mps', or 'cpu'.",
+        }
 
-    analysis = analyze_xyz(train_path)
-    loss = "stress" if analysis.get("has_stress") else "weighted"
-
-    model_dir = MODEL_DIR / model_name
-    model_dir.mkdir(parents=True, exist_ok=True)
-
-    train_path = prepare_training_file(
-        train_path,
-        model_dir / "train_data.extxyz",
-        energy_key=COLABFIT_ENERGY_KEY,
-        forces_key=COLABFIT_FORCES_KEY,
-    )
-
-    defaults = TRAIN_DEFAULTS
     batch_size = batch_size or defaults["batch_size"]
-    num_channels = defaults["num_channels"]
-    max_L = defaults["max_L"]
-    hidden_irreps = (
-        f"{num_channels}x0e + {num_channels}x1o" if max_L >= 1 else f"{num_channels}x0e"
+    effective_avg_neighbors = (
+        avg_num_neighbors if avg_num_neighbors is not None
+        else estimate_avg_num_neighbors(kliff_dataset, r_max, dataset_elements)
+    )
+    logger.info(
+        f"Config: {n_configs} configs | avg_neighbors={effective_avg_neighbors:.1f}"
+        f" | r_max={r_max} Å | device={device} | dtype={defaults['dtype']}"
+        f" | batch_size={batch_size}"
     )
 
-    cmd = [
-        "mace_run_train",
-        f"--name={model_name}",
-        f"--train_file={train_path}",
-        f"--valid_fraction={defaults['valid_fraction']}",
-        "--model=MACE",
-        f"--hidden_irreps={hidden_irreps}",
-        f"--r_max={r_max}",
-        f"--num_interactions={defaults['num_interactions']}",
-        f"--max_num_epochs={max_num_epochs}",
-        f"--batch_size={batch_size}",
-        f"--valid_batch_size={defaults['valid_batch_size']}",
-        f"--device={device}",
-        f"--loss={loss}",
-        "--E0s=average",
-        f"--energy_key={COLABFIT_ENERGY_KEY}",
-        f"--forces_key={COLABFIT_FORCES_KEY}",
-        f"--stress_key={COLABFIT_STRESS_KEY}",
-        f"--default_dtype={defaults['default_dtype']}",
-        f"--num_workers={defaults['num_workers']}",
-        f"--seed={defaults['seed']}",
-        f"--model_dir={model_dir}",
-        f"--results_dir={model_dir}",
-        f"--checkpoints_dir={model_dir}",
-    ]
-    if device == "cuda":
-        cmd.append("--pin_memory=True")
-    if device == "cuda" and importlib.util.find_spec("cuequivariance") is not None:
-        cmd.append("--enable_cueq=True")
-    if defaults["swa"]:
-        cmd.append("--swa")
-    if defaults["ema"]:
-        cmd.append("--ema")
-        cmd.append(f"--ema_decay={defaults['ema_decay']}")
+    torch.set_default_dtype(dtype)
 
-    log_file = model_dir / "training.log"
+    logger.info("Building KLAY model...")
+    try:
+        cfg_dict = build_mace_klay_config(
+            elements=dataset_elements,
+            r_max=r_max,
+            n_channels=defaults["num_channels"],
+            lmax=defaults["lmax"],
+            correlation=defaults["correlation"],
+            avg_num_neighbors=effective_avg_neighbors,
+            n_layers=n_layers,
+        )
+        yaml_path = model_dir / "mace_model.yaml"
+        write_mace_yaml(cfg_dict, yaml_path)
+        cfg = OmegaConf.create(cfg_dict)
+        model = build_model(cfg)
+    except Exception as e:
+        logger.remove(sink_id)
+        return {"success": False, "error": f"Failed to build model: {e}"}
+
+    n_params = sum(p.numel() for p in model.parameters())
+    logger.info(
+        f"Model built: {n_params} parameters | n_layers={n_layers}"
+        f" | lmax={defaults['lmax']} | n_channels={defaults['num_channels']}"
+        f" | correlation={defaults['correlation']}"
+    )
+
+    manifest = build_training_manifest(
+        dataset_path=dataset_path,
+        model_name=model_name,
+        model_dir=model_dir,
+        elements=dataset_elements,
+        r_max=r_max,
+        batch_size=batch_size,
+        train_size=defaults["train_size"],
+        val_size=defaults["val_size"],
+        max_num_epochs=max_num_epochs,
+        lr=defaults["lr"],
+        seed=defaults["seed"],
+        device=device,
+        n_configs=n_configs,
+        num_workers=defaults["num_workers"],
+    )
+
+    effective_train = manifest["training"]["training_dataset"]["train_size"]
+    effective_val = manifest["training"]["validation_dataset"]["val_size"]
+    logger.info(
+        f"Constructing trainer: train_size={effective_train} val_size={effective_val}"
+        f" | batch={batch_size} | epochs={max_num_epochs}"
+    )
 
     try:
-        with open(log_file, "w", buffering=1) as log:
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-
-            for line in iter(process.stdout.readline, ""):
-                log.write(line)
-                print(line, end="", file=sys.stderr)
-
-            process.wait(timeout=TRAINING_TIMEOUT)
-
-        model_files = list(model_dir.glob("*.model"))
-        log_content = log_file.read_text()
-        if not model_files:
-            diag = diagnose_failure(log_content, "")
-            return {
-                "success": False,
-                "error": "No model file produced",
-                "diagnosis": diag,
-                "log_file": str(log_file),
-                "stdout": log_content[-2000:],
-            }
-
-        model_path = max(model_files, key=lambda p: p.stat().st_mtime)
-        metrics = parse_training_log(log_content)
-
-        return {
-            "success": True,
-            "model_path": str(model_path),
-            "model_dir": str(model_dir),
-            "log_file": str(log_file),
-            "device": device,
-            "architecture": {
-                "r_max": r_max,
-                "num_channels": num_channels,
-                "max_L": max_L,
-                "num_interactions": defaults["num_interactions"],
-            },
-            "loss_type": loss,
-            "elements": analysis.get("elements", []),
-            "metrics": metrics,
-            "next_step": (
-                f"Model saved at {model_path}. Training log available at {log_file}. "
-                "Use use_model to run inference or calculate properties with the trained model."
-            ),
-        }
-    except subprocess.TimeoutExpired:
-        process.kill()
-        if process.stdout:
-            process.stdout.read()
-        process.wait()
-        return {
-            "success": False,
-            "error": "Training timed out (2 hour limit). Try reducing max_num_epochs.",
-            "log_file": str(log_file),
-        }
-    except FileNotFoundError:
-        return {
-            "success": False,
-            "error": "mace_run_train not found. Ensure mace-torch is installed.",
-        }
+        KliffTrainerWithDataset = get_kliff_trainer_class()
+        trainer = KliffTrainerWithDataset(manifest, model=model, dataset=kliff_dataset)
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.remove(sink_id)
+        return {"success": False, "error": diagnose_failure(e)}
+
+    logger.info("Trainer constructed OK")
+
+    run_forward_pass_check(trainer, kliff_dataset, dataset_elements, r_max)
+
+    logger.info("Calling trainer.train() — next log from inside KLIFF")
+    try:
+        trainer.train()
+    except Exception as e:
+        logger.remove(sink_id)
+        return {"success": False, "error": diagnose_failure(e)}
+
+    logger.info("Training complete.")
+
+    kim_model_name = manifest["export"]["model_name"]
+    kim_model_dir = model_dir / kim_model_name
+    kim_model_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        trainer.save_kim_model()
+    except Exception:
+        _save_model_fallback(trainer, kim_model_dir, dataset_elements, r_max, n_layers)
+
+    metrics = parse_kliff_metrics(model_dir)
+
+    logger.remove(sink_id)
+    return {
+        "success": True,
+        "model_path": str(kim_model_dir),
+        "model_dir": str(model_dir),
+        "kim_model_name": kim_model_name,
+        "yaml_path": str(yaml_path),
+        "device": device,
+        "architecture": {
+            "r_max": r_max,
+            "num_channels": defaults["num_channels"],
+            "lmax": defaults["lmax"],
+            "n_layers": n_layers,
+            "correlation": defaults["correlation"],
+            "avg_num_neighbors": effective_avg_neighbors,
+        },
+        "elements": dataset_elements,
+        "metrics": metrics,
+        "next_step": (
+            f"KIM model saved at {kim_model_dir}. "
+            "Use use_model to run inference or calculate properties with the trained model."
+        ),
+    }
+
+
+def _save_model_fallback(trainer, kim_model_dir: Path, elements: list[str], r_max: float, n_layers: int) -> None:
+    """Save model via torch.save when TorchScript export fails (KLAY compat)."""
+    import torch
+    from copy import deepcopy
+
+    pl_module = deepcopy(trainer.pl_model)
+    ckpt_path = Path(trainer.current["run_dir"]) / "checkpoints" / "best_model.pth"
+    if ckpt_path.exists():
+        pl_module.load_state_dict(torch.load(str(ckpt_path)))
+    model = pl_module.model.cpu()
+    torch.save(model, str(kim_model_dir / "model.pt"))
+
+    trainer.configuration_transform.export_kim_model(str(kim_model_dir), "model.pt")
+
+    cmakefile = trainer._generate_kim_cmake(
+        kim_model_dir.name,
+        "TorchML__MD_173118614730_000",
+        ["model.pt", "kliff_graph.param"],
+    )
+    (kim_model_dir / "CMakeLists.txt").write_text(cmakefile)
+    trainer.write_training_env_edn(str(kim_model_dir))

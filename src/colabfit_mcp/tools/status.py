@@ -1,19 +1,32 @@
 import shutil
 
-from colabfit_mcp.config import DOWNLOAD_DIR, MODEL_DIR
+from colabfit_mcp.config import DOWNLOAD_DIR, INFERENCE_DIR, MODEL_DIR
 
 
 def check_status() -> dict:
     """Check system status including GPU, packages, and connectivity.
 
-    Returns versions of key packages (torch, mace), GPU
+    Returns versions of key packages (torch, klay, kliff), GPU
     availability, disk usage, and lists of
     existing models and datasets.
 
+    IMPORTANT: All file paths are inside the Docker container filesystem.
+    Use container_paths values when specifying paths to other tools.
+
     Returns:
-        Dict with system info, connectivity, and resource inventory.
+        Dict with system info, connectivity, resource inventory, and
+        container_paths showing where datasets/models/outputs are stored.
     """
     status = {
+        "container_paths": {
+            "datasets": str(DOWNLOAD_DIR),
+            "models": str(MODEL_DIR),
+            "inference_output": str(INFERENCE_DIR),
+            "note": (
+                "All paths are inside the Docker container. "
+                "Use these base paths when passing file paths to other tools."
+            ),
+        },
         "gpu": _gpu_info(),
         "packages": _package_versions(),
         "disk": _disk_info(),
@@ -48,7 +61,7 @@ def _gpu_info() -> dict:
 
 def _package_versions() -> dict:
     versions = {}
-    for pkg in ("torch", "mace"):
+    for pkg in ("torch", "klay", "kliff"):
         try:
             mod = __import__(pkg)
             versions[pkg] = getattr(mod, "__version__", "installed")

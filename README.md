@@ -1,6 +1,6 @@
 # colabfit-mcp
 
-An MCP server for discovering [ColabFit](https://materials.colabfit.org) datasets and training MACE interatomic potentials.
+An MCP server for discovering [ColabFit](https://materials.colabfit.org) datasets and training MACE interatomic potentials using [KLIFF](https://kliff.readthedocs.io/) and [KLAY](https://github.com/openkim/klay).
 
 ## Setup
 
@@ -84,17 +84,16 @@ Add to your Claude Desktop config (`Settings > Developer > Edit Config`):
 |------|-------------|
 | `search_datasets` | Search ColabFit database by text, elements, properties, software |
 | `check_local_datasets` | Scan local data directory for downloaded datasets, filter by elements/properties |
-| `download_dataset` | Download dataset as XYZ files with automatic analysis |
-| `fine_tune_mace` | Fine-tune MACE-MP-0 foundation model on a dataset (recommended) |
-| `train_mace` | Train a MACE model from scratch |
-| `use_model` | Run energy/forces/stress/relax calculations with a trained model, or generate a Python snippet |
+| `download_dataset` | Download a dataset from HuggingFace via KLIFF, save as extxyz |
+| `train_mace` | Train a MACE-style KLAY model from scratch using KLIFF |
+| `use_model` | Run energy/forces/relax calculations with a trained KLAY model, or generate a Python snippet |
 | `check_status` | Check GPU, packages, disk, existing models and datasets |
 
 ## Typical Workflow
 
 1. `search_datasets` — find datasets with the elements/properties you need
-2. `download_dataset` — download and auto-analyze for training suitability
-3. `fine_tune_mace` — fine-tune the MACE-MP-0 foundation model on your data
+2. `download_dataset` — download from HuggingFace and convert to extxyz
+3. `train_mace` — train a MACE-style KLAY model on the downloaded data
 4. `use_model` — run calculations or generate a reusable Python script
 
 ## Sample Prompts
@@ -109,17 +108,17 @@ The following prompts work directly in Claude Code or Claude Desktop once the MC
 
 **End-to-end training:**
 
-> Find a dataset for copper, download it, and fine-tune MACE-MP-0 on it. Use default settings.
+> Find a dataset for copper, download it, and train a MACE model on it. Use default settings.
 
-> I need a potential for lithium phosphate. Search ColabFit for Li and P datasets, pick the most suitable one, and start fine-tuning.
+> I need a potential for lithium phosphate. Search ColabFit for Li and P datasets, pick the most suitable one, and start training.
 
 **Run inference:**
 
-> Use my model at colabfit_data/models/cu_mace/cu_mace_stagetwo.model to calculate the energy and forces on bulk copper in FCC structure.
+> Use my model at /home/mcpuser/colabfit/models/cu_mace/cu_mace__MO_000000000000_000 to calculate the energy and forces on bulk copper in FCC structure.
 
 > Relax an FCC aluminum structure with my trained model and report the final energy and cell parameters.
 
-> Generate a Python snippet to run Langevin molecular dynamics on bulk silicon using my MACE model.
+> Generate a Python snippet to run the energy calculation on bulk silicon using my KLAY model.
 
 **Check status:**
 
@@ -165,9 +164,8 @@ The pip-installed version handles GPU detection purely in Python via `detect_dev
 ### Install
 
 ```bash
-pip install colabfit-mcp                  # search, download, check_status only
-pip install 'colabfit-mcp[train]'         # + MACE training (any CUDA version)
-pip install 'colabfit-mcp[full]'          # + CUDA 12 optimized cuequivariance ops
+pip install colabfit-mcp                  # search, check_status only
+pip install 'colabfit-mcp[full]'          # + KLIFF/KLAY training, HuggingFace download
 ```
 
 ### Register with Claude Code
@@ -210,10 +208,14 @@ Subdirectories are created automatically the first time each tool writes data.
 ```
 server container
 ├── MCP server (FastMCP, stdio)
-├── mace-torch
-├── MACE-MP-0 foundation (cached at build time)
-└── Training via mace_run_train
+├── KLIFF (dataset loading, training orchestration)
+├── KLAY (MACE-style model construction)
+└── Training via KLIFF GNNLightningTrainer
 ```
+
+Datasets are downloaded from HuggingFace (`colabfit/` org) as parquet files via KLIFF's
+`Dataset.from_huggingface`, then converted to extxyz. Models are MACE-style graphs
+built with KLAY and trained with KLIFF's Lightning trainer.
 
 Container managed by Docker Compose:
 - **server** — MCP server + ML training
@@ -225,14 +227,13 @@ Container managed by Docker Compose:
 | `COLABFIT_DATA_ROOT` | `./colabfit_data` | **Host directory** for datasets and models (bind mount) |
 | `USER_ID` | `1000` | User ID for container (should match host user) |
 | `GROUP_ID` | `1000` | Group ID for container (should match host user) |
-| `FOUNDATION_MODEL` | `small` | MACE-MP-0 foundation size: `small`, `medium`, or `large` |
-| `MACE_DTYPE` | `float32` | Training precision. Use `float64` only for geometry optimization. |
-| `MACE_BATCH_SIZE` | `8` (fine-tune) / `16` (train) | Training batch size. Decrease if OOM. |
-| `MACE_VALID_BATCH_SIZE` | `16` / `32` | Validation batch size (can be larger than training). |
-| `MACE_NUM_WORKERS` | `4` | DataLoader worker processes for parallel data loading. |
-| `COLABFIT_BASE_URL` | `https://materials.colabfit.org` | ColabFit API base URL |
-| `COLABFIT_AUTH_USER` | `mcp-tool` | ColabFit API auth username |
-| `COLABFIT_AUTH_PASS` | `mcp-secret` | ColabFit API auth password |
+| `BATCH_SIZE` | `4` | Training batch size. Decrease if OOM. |
+| `TRAIN_SIZE` | `0` | Number of training configs (0 = auto 90% split) |
+| `VAL_SIZE` | `0` | Number of validation configs (0 = auto 10% split) |
+| `KLIFF_DTYPE` | `float64` | Training precision (`float64` recommended for MACE) |
+| `COLABFIT_BASE_URL` | `https://materials.colabfit.org` | ColabFit API base URL (used by search) |
+| `COLABFIT_AUTH_USER` | `mcp-tool` | ColabFit API auth username (used by search) |
+| `COLABFIT_AUTH_PASS` | `mcp-secret` | ColabFit API auth password (used by search) |
 
 **Data Storage:**
 
@@ -270,96 +271,71 @@ over a network port.
 
 ---
 
-## Manual Usage: Using a Trained Model with ASE
+## Manual Usage: Running Inference with a Trained KLAY Model
 
-After training or fine-tuning, the model directory contains several `.model` files.
-Use `<model_name>_stagetwo.model` for inference — it is the SWA-averaged final model
-and generally has the best accuracy.
+After training, the model directory (`model_path` returned by `train_mace`) contains
+`model.pt` and `kliff_graph.param`. Use these directly with PyTorch and KLIFF.
 
-### Attaching a MACE Calculator to ASE Atoms
+### Loading and Running the Model
 
 ```python
-from mace.calculators import MACECalculator
+import numpy as np
+import torch
+from torch_scatter import scatter_add
+from kliff.dataset import Configuration
+from kliff.transforms.configuration_transforms.graphs.generate_graph import RadialGraph
 from ase.build import bulk
 
-calc = MACECalculator(
-    model_paths="colabfit_data/models/<model_name>/<model_name>_stagetwo.model",
-    device="cuda",       # or "cpu"
-    default_dtype="float64",
-)
-
 atoms = bulk("Si", "diamond", a=5.43)
-atoms.calc = calc
+
+model_dir = "/home/mcpuser/colabfit/models/colabfit_mace/colabfit_mace__MO_000000000000_000"
+
+# Load model (tries TorchScript first, falls back to torch.load)
+try:
+    model = torch.jit.load(f"{model_dir}/model.pt")
+except Exception:
+    model = torch.load(f"{model_dir}/model.pt", weights_only=False)
+model.eval()
+
+# Build graph — read species/cutoff from kliff_graph.param
+transform = RadialGraph(species=["Si"], cutoff=5.0, n_layers=1)
+config = Configuration(
+    cell=atoms.cell.array,
+    species=list(atoms.get_chemical_symbols()),
+    coords=atoms.get_positions(),
+    PBC=list(atoms.get_pbc()),
+    energy=0.0,
+    forces=np.zeros((len(atoms), 3)),
+)
+graph = transform(config)
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+coords = graph.coords.clone().detach().to(torch.float64).to(device).requires_grad_(True)
+energy = model(
+    species=graph.species.to(device),
+    coords=coords,
+    edge_index0=graph.edge_index0.to(device),
+    contributions=graph.contributions.to(device),
+)
+print(f"Energy: {energy.sum().item():.4f} eV")
+
+# Forces via autograd
+(grad,) = torch.autograd.grad(energy.sum(), coords)
+forces = -scatter_add(grad, graph.images.to(device), dim=0)[:len(atoms)]
+print(f"Forces (eV/Å):\n{forces.detach().cpu().numpy()}")
 ```
 
-### Properties MACE Implements
+### Geometry Optimization with ASE
 
-| Method | Returns | Units | Notes |
-|--------|---------|-------|-------|
-| `atoms.get_potential_energy()` | scalar | eV | |
-| `atoms.get_forces()` | `(N, 3)` array | eV/Å | |
-| `atoms.get_stress()` | `(6,)` Voigt array | eV/Å³ | periodic structures only; see note below |
-| `atoms.get_potential_energies()` | `(N,)` array | eV | per-atom energies |
-| `atoms.calc.get_property("node_energy", atoms)` | `(N,)` array | eV | per-atom energies relative to atomic references; no `atoms.get_*` wrapper |
-| `atoms.get_stresses()` | `(N, 6)` array | eV/Å³ | requires `compute_atomic_stresses=True` on calculator init |
-
-Enable per-atom stresses at calculator creation:
-
-```python
-calc = MACECalculator(..., compute_atomic_stresses=True)
-```
-
-**Stress note:** Stress is always computed via autodiff (virial: ∂E/∂ε). When
-`cauchy_stress` was present in the training data, the model was explicitly optimized
-to reproduce those values and stress predictions will be accurate. Without stress
-training data, the computation still runs but the values are less reliable.
-Stress is not computed for non-periodic structures (no cell/PBC) and will raise
-`PropertyNotImplementedError` in that case.
-
-### Properties Computed by ASE Itself (no calculator needed)
-
-| Method | Notes |
-|--------|-------|
-| `atoms.get_kinetic_energy()` | from `momenta` array; returns 0.0 if momenta not set |
-| `atoms.get_temperature()` | derived from kinetic energy |
-| `atoms.get_velocities()` | derived from momenta and masses |
-| `atoms.get_total_energy()` | `get_potential_energy() + get_kinetic_energy()` |
-
-### Unsupported Properties
-
-Calling `atoms.get_charges()`, `atoms.get_magnetic_moments()`, or
-`atoms.get_dipole_moment()` with a MACE calculator raises
-`PropertyNotImplementedError` — MACE does not predict these.
-
-### Common Workflows
-
-**Geometry optimization:**
+The `use_model` tool's `_KliffInlineCalculator` wraps the KLAY model as an ASE
+calculator. For custom scripts, replicate the same pattern:
 
 ```python
 from ase.optimize import BFGS
 
+# (attach _KliffInlineCalculator from use_model module, or replicate the pattern)
 opt = BFGS(atoms, trajectory="relax.traj")
 opt.run(fmax=0.01)  # converge forces below 0.01 eV/Å
-```
-
-**Molecular dynamics:**
-
-```python
-from ase.md.langevin import Langevin
-from ase import units
-
-dyn = Langevin(atoms, timestep=1.0 * units.fs, temperature_K=300, friction=0.01)
-dyn.run(1000)
-```
-
-**Vibrational frequencies** (finite differences of forces; no stress training data needed):
-
-```python
-from ase.vibrations import Vibrations
-
-vib = Vibrations(atoms)
-vib.run()
-vib.summary()
 ```
 
 [mcp-name: io.github.colabfit/colabfit-mcp]: #
