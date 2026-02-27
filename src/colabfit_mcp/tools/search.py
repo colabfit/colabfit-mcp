@@ -70,7 +70,7 @@ def search_datasets(
             "pagination_note": "Results are sliced client-side from the full API response.",
             "next_step": (
                 "Use download_dataset with a dataset_id to download "
-                "training data, then fine_tune_mace to train a model."
+                "training data, then fine_tune_mace or train_mace to train a model."
             ),
         }
     except requests.exceptions.HTTPError as e:
