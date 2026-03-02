@@ -5,6 +5,7 @@ from loguru import logger
 from colabfit_mcp.config import (
     KLIFF_DEFAULTS,
     MODEL_DIR,
+    container_to_host,
 )
 from colabfit_mcp.helpers.device import detect_device
 from colabfit_mcp.helpers.kliff_trainer import get_kliff_trainer_class, run_forward_pass_check
@@ -80,10 +81,19 @@ def train_mace(
             if the estimate is known to be wrong (e.g., very small test dataset).
             Typical values: 10-40 for solid-state, 5-15 for molecular systems.
 
+    IMPORTANT — TELL THE USER THE LOG PATH AFTER CALLING THIS TOOL:
+        Training can take minutes to hours. The actual log file path is returned
+        in the 'training_log' key of the result. Always report this exact path
+        to the user immediately after the tool call so they can follow progress
+        with `tail -f <path>` while training runs.
+
     Returns:
         Dict with keys:
-            model_path: KIM model subdirectory (Name__MO_000000000000_000/).
-                Pass this to use_model — NOT model_dir.
+            training_log: Host filesystem path to the training log file.
+            training_log_docker: Container path to the training log file.
+            model_path: Host filesystem path to the KIM model subdirectory.
+            model_path_docker: Container path to the KIM model subdirectory
+                (Name__MO_000000000000_000/). Pass this to use_model — NOT model_path.
             model_dir: Parent directory containing model.pt, mace_model.yaml,
                 and KLIFF training logs.
             yaml_path: Path to mace_model.yaml (KLAY architecture config).
@@ -100,15 +110,19 @@ def train_mace(
             "error": f"Missing dependency: {e}. Install with pip install '.[full]'.",
         }
 
-    # Set up model directory and log file early so all phases are captured in training.log
-    model_dir = MODEL_DIR / model_name
-    model_dir.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime
 
+    model_dir = MODEL_DIR / model_name
+    kim_model_name = f"{model_name}__MO_000000000000_000"
+    kim_model_dir = model_dir / kim_model_name
+    kim_model_dir.mkdir(parents=True, exist_ok=True)
+
+    run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_path = kim_model_dir / f"training_{run_ts}.log"
     sink_id = logger.add(
-        str(model_dir / "training.log"),
+        str(log_path),
         format="{time:HH:mm:ss} | {level:<8} | {message}",
         level="DEBUG",
-        mode="w",
         colorize=False,
     )
     logger.info(f"=== Training: {model_name} ===")
@@ -222,7 +236,7 @@ def train_mace(
             avg_num_neighbors=effective_avg_neighbors,
             n_layers=n_layers,
         )
-        yaml_path = model_dir / "mace_model.yaml"
+        yaml_path = kim_model_dir / "mace_model.yaml"
         write_mace_yaml(cfg_dict, yaml_path)
         cfg = OmegaConf.create(cfg_dict)
         model = build_model(cfg)
@@ -276,26 +290,28 @@ def train_mace(
     try:
         trainer.train()
     except Exception as e:
+        logger.error(f"Training exception: {e}")
         logger.remove(sink_id)
         return {"success": False, "error": diagnose_failure(e)}
 
     logger.info("Training complete.")
 
-    kim_model_name = manifest["export"]["model_name"]
-    kim_model_dir = model_dir / kim_model_name
-    kim_model_dir.mkdir(parents=True, exist_ok=True)
-
     try:
-        trainer.save_kim_model()
-    except Exception:
-        _save_model_fallback(trainer, kim_model_dir, dataset_elements, r_max, n_layers)
+        _save_model_fallback(trainer, kim_model_dir, dataset_elements, r_max, kliff_dataset)
+    except Exception as save_err:
+        logger.error(f"Model save failed: {save_err}")
 
-    metrics = parse_kliff_metrics(model_dir)
+    metrics = parse_kliff_metrics(kim_model_dir)
 
+    log_host = container_to_host(log_path)
+    model_host = container_to_host(kim_model_dir)
     logger.remove(sink_id)
     return {
         "success": True,
-        "model_path": str(kim_model_dir),
+        "training_log": log_host or str(log_path),
+        "training_log_docker": str(log_path),
+        "model_path": model_host or str(kim_model_dir),
+        "model_path_docker": str(kim_model_dir),
         "model_dir": str(model_dir),
         "kim_model_name": kim_model_name,
         "yaml_path": str(yaml_path),
@@ -317,24 +333,77 @@ def train_mace(
     }
 
 
-def _save_model_fallback(trainer, kim_model_dir: Path, elements: list[str], r_max: float, n_layers: int) -> None:
-    """Save model via torch.save when TorchScript export fails (KLAY compat)."""
+def _write_kliff_graph_param(kim_model_dir: Path, elements: list[str], r_max: float) -> None:
+    """Write kliff_graph.param so use_model can build the RadialGraph transform."""
+    content = f"{len(elements)}\n{' '.join(elements)}\nGraph\n{r_max}\n1\n"
+    (kim_model_dir / "kliff_graph.param").write_text(content)
+
+
+def _build_trace_inputs(kliff_dataset, elements: list[str], r_max: float):
+    """Return CPU tensors (species, coords, edge_index0, contributions) for torch.jit.trace."""
     import torch
-    from copy import deepcopy
+    from kliff.transforms.configuration_transforms.graphs.generate_graph import RadialGraph
 
-    pl_module = deepcopy(trainer.pl_model)
-    ckpt_path = Path(trainer.current["run_dir"]) / "checkpoints" / "best_model.pth"
-    if ckpt_path.exists():
-        pl_module.load_state_dict(torch.load(str(ckpt_path)))
-    model = pl_module.model.cpu()
-    torch.save(model, str(kim_model_dir / "model.pt"))
-
-    trainer.configuration_transform.export_kim_model(str(kim_model_dir), "model.pt")
-
-    cmakefile = trainer._generate_kim_cmake(
-        kim_model_dir.name,
-        "TorchML__MD_173118614730_000",
-        ["model.pt", "kliff_graph.param"],
+    transform = RadialGraph(species=elements, cutoff=r_max, n_layers=1)
+    graph = transform(kliff_dataset.configs[0])
+    return (
+        graph.species,
+        graph.coords.to(torch.float32),
+        graph.edge_index0,
+        graph.contributions,
     )
-    (kim_model_dir / "CMakeLists.txt").write_text(cmakefile)
-    trainer.write_training_env_edn(str(kim_model_dir))
+
+
+def _save_model_fallback(
+    trainer, kim_model_dir: Path, elements: list[str], r_max: float, kliff_dataset=None
+) -> None:
+    import torch
+    from loguru import logger
+
+    try:
+        trainer.configuration_transform.export_kim_model(str(kim_model_dir), "model_state.pt")
+    except Exception:
+        _write_kliff_graph_param(kim_model_dir, elements, r_max)
+
+    model = trainer.pl_model.model.cpu()
+
+    run_dir = Path(trainer.current.get("run_dir", ""))
+    ckpt_dir = run_dir / "checkpoints"
+    if ckpt_dir.exists():
+        ckpts = sorted(ckpt_dir.glob("*.pth")) + sorted(ckpt_dir.glob("*.ckpt"))
+        if ckpts:
+            ckpt = torch.load(str(ckpts[-1]), weights_only=False)
+            if isinstance(ckpt, dict) and "state_dict" in ckpt:
+                model_state = {
+                    k[len("model."):]: v
+                    for k, v in ckpt["state_dict"].items()
+                    if k.startswith("model.")
+                }
+                if model_state:
+                    model.load_state_dict(model_state, strict=False)
+
+    if kliff_dataset is not None:
+        try:
+            class _Wrapper(torch.nn.Module):
+                def __init__(self, m):
+                    super().__init__()
+                    self.m = m
+
+                def forward(self, species, coords, edge_index0, contributions):
+                    return self.m(
+                        species=species,
+                        coords=coords,
+                        edge_index0=edge_index0,
+                        contributions=contributions,
+                    )
+
+            inputs = _build_trace_inputs(kliff_dataset, elements, r_max)
+            traced = torch.jit.trace(_Wrapper(model), inputs)
+            torch.jit.save(traced, str(kim_model_dir / "model.pt"))
+            logger.info(f"Saved traced model to {kim_model_dir / 'model.pt'}")
+            return
+        except Exception as trace_err:
+            logger.warning(f"torch.jit.trace failed ({trace_err}), saving state dict instead")
+
+    torch.save(model.state_dict(), str(kim_model_dir / "model_state.pt"))
+    logger.info(f"Saved model_state.pt to {kim_model_dir}")

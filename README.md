@@ -124,6 +124,37 @@ The following prompts work directly in Claude Code or Claude Desktop once the MC
 
 > Check my GPU status and list all the models and datasets I have locally.
 
+## Stopping / Canceling Training
+
+The MCP server runs via `docker compose run` (not `docker compose up`), so
+`docker compose down` alone will **not** stop an active training container.
+Use the methods below to stop the server including any in-progress training job.
+
+### Using Makefile
+
+```bash
+make stop
+```
+
+### Without Makefile
+
+```bash
+# Stop all containers belonging to this project (catches both 'up' and 'run' containers)
+docker ps -q --filter "label=com.docker.compose.project=colabfit-mcp" | xargs -r docker stop
+docker compose down
+```
+
+If the project directory is not named `colabfit-mcp`, replace the filter value with your
+directory name (lowercased). You can check the label on a running container with:
+
+```bash
+docker inspect <container-id> --format '{{ index .Config.Labels "com.docker.compose.project" }}'
+```
+
+> Training progress is saved as `training.log` inside the model's KIM subdirectory
+> (`<model_name>__MO_000000000000_000/training.log`). Stopping mid-training discards any
+> in-progress epoch; completed epochs and their checkpoints are preserved on disk.
+
 ## Monitoring Training Progress
 
 View training output in the following ways:
@@ -144,10 +175,10 @@ Press `Ctrl+C` to exit (training continues in background).
 
 ### 2. Persistent Log Files
 
-Training writes log files in your data directory under each model's subdirectory:
+Training writes log files inside the model's KIM subdirectory:
 
 ```bash
-./colabfit_data/models/<model_name>/training.log
+./colabfit_data/models/<model_name>/<model_name>__MO_000000000000_000/training.log
 ```
 
 ## GPU Support

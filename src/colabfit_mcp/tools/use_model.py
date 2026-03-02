@@ -45,7 +45,7 @@ def use_model(
     script (mode='snippet').
 
     IMPORTANT: model_path must be the KIM model *subdirectory* returned as
-    'model_path' by train_mace (format: Name__MO_000000000000_000/), not the
+    'model_path_docker' by train_mace (format: Name__MO_000000000000_000/), not the
     parent model_dir. The subdirectory must contain model.pt and kliff_graph.param.
 
     IMPORTANT: All paths are inside the Docker container filesystem.
@@ -57,7 +57,7 @@ def use_model(
 
     Args:
         model_path: Container path to the KIM model subdirectory (Name__MO_*_000/).
-            Use the 'model_path' key from train_mace result, not 'model_dir'.
+            Use the 'model_path_docker' key from train_mace result, not 'model_path' or 'model_dir'.
         formula: Chemical formula (e.g. "Si", "Fe", "NaCl", "Fe2O3").
             Only letters and digits are valid — no spaces, brackets, or parentheses.
         crystal_structure: ASE bulk structure type ("diamond", "fcc", "bcc",
@@ -83,9 +83,10 @@ def use_model(
         return {"success": False, "error": f"Model directory not found: {model_path}"}
 
     model_pt = model_dir / "model.pt"
+    model_state_pt = model_dir / "model_state.pt"
     param_file = model_dir / "kliff_graph.param"
-    if not model_pt.exists():
-        return {"success": False, "error": f"model.pt not found in {model_path}"}
+    if not model_pt.exists() and not model_state_pt.exists():
+        return {"success": False, "error": f"Neither model.pt nor model_state.pt found in {model_path}"}
     if not param_file.exists():
         return {"success": False, "error": f"kliff_graph.param not found in {model_path}"}
 
@@ -185,11 +186,28 @@ def _run_calculations(
         return {"success": False, "error": f"Failed to build structure: {e}"}
 
     try:
-        try:
-            model = torch.jit.load(str(model_dir / "model.pt"), map_location=device)
-        except Exception:
-            model = torch.load(str(model_dir / "model.pt"), map_location=device, weights_only=False)
+        model_state_pt = model_dir / "model_state.pt"
+        yaml_path = model_dir / "mace_model.yaml"
+        if model_state_pt.exists() and yaml_path.exists():
+            import yaml as _yaml
+            from omegaconf import OmegaConf
+            from klay.builder import build_model
+            with open(yaml_path) as f:
+                cfg_dict = _yaml.safe_load(f)
+            model = build_model(OmegaConf.create(cfg_dict))
+            state_dict = torch.load(str(model_state_pt), map_location=device, weights_only=False)
+            model.load_state_dict(state_dict)
+            model = model.to(device)
+        else:
+            try:
+                model = torch.jit.load(str(model_dir / "model.pt"), map_location=device)
+            except Exception:
+                model = torch.load(str(model_dir / "model.pt"), map_location=device, weights_only=False)
         model.eval()
+        try:
+            model_dtype = next(model.parameters()).dtype
+        except StopIteration:
+            model_dtype = torch.float32
     except Exception as e:
         return {"success": False, "error": f"Failed to load model: {e}"}
 
@@ -218,7 +236,7 @@ def _run_calculations(
     results = {}
     try:
         dev = torch.device(device)
-        coords_t = graph.coords.clone().detach().to(torch.float64).to(dev).requires_grad_(True)
+        coords_t = graph.coords.clone().detach().to(model_dtype).to(dev).requires_grad_(True)
         species_t = graph.species.to(dev)
         edge_index_t = graph.edge_index0.to(dev)
         contributions_t = graph.contributions.to(dev)
@@ -238,7 +256,7 @@ def _run_calculations(
             results["relaxation_converged"] = converged
             atoms = atoms_relax
             coords_t = torch.tensor(
-                atoms.get_positions(), dtype=torch.float64, device=dev, requires_grad=True
+                atoms.get_positions(), dtype=model_dtype, device=dev, requires_grad=True
             )
             coords_t_expanded = _expand_coords_for_images(coords_t, images_t)
             energy_t = model(
@@ -293,12 +311,17 @@ class _KliffInlineCalculator:
     implemented_properties = ["energy", "forces"]
 
     def __init__(self, model, transform, params, device, n_orig):
+        import torch
         self.model = model
         self.transform = transform
         self.params = params
         self.device = device
         self.n_orig = n_orig
         self.results = {}
+        try:
+            self.model_dtype = next(model.parameters()).dtype
+        except StopIteration:
+            self.model_dtype = torch.float32
 
     def calculate(self, atoms, properties=None, system_changes=None):
         import numpy as np
@@ -316,7 +339,7 @@ class _KliffInlineCalculator:
             energy=0.0, forces=np.zeros((len(species_list), 3)),
         )
         graph = self.transform(config)
-        coords_t = graph.coords.clone().detach().to(torch.float64).to(dev).requires_grad_(True)
+        coords_t = graph.coords.clone().detach().to(self.model_dtype).to(dev).requires_grad_(True)
         species_t = graph.species.to(dev)
         edge_index_t = graph.edge_index0.to(dev)
         contributions_t = graph.contributions.to(dev)
@@ -395,7 +418,8 @@ def _build_snippet(
         ")",
         "graph = transform(config)",
         f"dev = torch.device({device!r})",
-        "coords = graph.coords.clone().detach().to(torch.float64).to(dev).requires_grad_(True)",
+        "model_dtype = next(model.parameters()).dtype  # match model training precision",
+        "coords = graph.coords.clone().detach().to(model_dtype).to(dev).requires_grad_(True)",
         "energy = model(",
         "    species=graph.species.to(dev),",
         "    coords=coords,",

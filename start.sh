@@ -12,6 +12,7 @@ export GROUP_ID="${GROUP_ID:-$(id -g)}"
 
 DATA_ROOT="${COLABFIT_DATA_ROOT:-$SCRIPT_DIR/colabfit_data}"
 mkdir -p "$DATA_ROOT/models" "$DATA_ROOT/datasets" "$DATA_ROOT/inference_output"
+export HOST_DATA_ROOT="$DATA_ROOT"
 
 if command -v nvidia-smi &>/dev/null && nvidia-smi -L &>/dev/null; then
     exec docker compose \

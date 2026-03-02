@@ -27,6 +27,20 @@ DOWNLOAD_DIR = DATA_ROOT / "datasets"
 MODEL_DIR = DATA_ROOT / "models"
 INFERENCE_DIR = DATA_ROOT / "inference_output"
 
+_host_root_str = os.environ.get("HOST_DATA_ROOT", "")
+HOST_DATA_ROOT: Path | None = Path(_host_root_str) if _host_root_str else None
+
+
+def container_to_host(container_path: "str | Path") -> "str | None":
+    """Convert a container-side path to its host-side equivalent, or None if unknown."""
+    if HOST_DATA_ROOT is None:
+        return None
+    try:
+        rel = Path(container_path).relative_to(DATA_ROOT)
+        return str(HOST_DATA_ROOT / rel)
+    except ValueError:
+        return None
+
 
 COLABFIT_ENERGY_KEY = "energy"
 COLABFIT_FORCES_KEY = "forces"

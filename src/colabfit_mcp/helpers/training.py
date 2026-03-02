@@ -144,9 +144,10 @@ def build_training_manifest(
     effective_val = val_size if val_size > 0 else max(1, int(n_configs * 0.1))
 
     kim_model_name = f"{model_name}__MO_000000000000_000"
+    kim_model_dir = model_dir / kim_model_name
     accelerator = "gpu" if device == "cuda" else device
     return {
-        "workspace": {"name": str(model_dir), "seed": seed, "resume": False},
+        "workspace": {"name": str(kim_model_dir), "seed": seed, "resume": False},
         "model": {
             "name": model_name,
             "input_args": ["species", "coords", "edge_index0", "contributions"],

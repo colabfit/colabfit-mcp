@@ -96,14 +96,21 @@ def get_kliff_trainer_class():
                     else:
                         logger.warning(f"  batch.{attr}: MISSING")
 
-        def on_validation_epoch_end(self, trainer, pl_module):
+        def on_train_epoch_end(self, trainer, pl_module):
             from loguru import logger
 
             m = trainer.callback_metrics
             epoch = trainer.current_epoch
             train = float(m.get("train_loss", float("nan")))
+            logger.info(f"Epoch {epoch:4d} | train_loss={train:.6f}")
+
+        def on_validation_epoch_end(self, trainer, pl_module):
+            from loguru import logger
+
+            m = trainer.callback_metrics
+            epoch = trainer.current_epoch
             val = float(m.get("val_loss", float("nan")))
-            logger.info(f"Epoch {epoch:4d} | train_loss={train:.6f} | val_loss={val:.6f}")
+            logger.info(f"Epoch {epoch:4d} | val_loss={val:.6f}")
 
     class KliffTrainerWithDataset(GNNLightningTrainer):
         def __init__(self, manifest, model=None, dataset=None):
@@ -129,6 +136,7 @@ def get_kliff_trainer_class():
                 super().setup_dataset()
 
         def setup_dataloaders(self):
+            import torch
             from loguru import logger
 
             n_total = (
@@ -143,6 +151,25 @@ def get_kliff_trainer_class():
             n_val = len(self.val_dataset) if hasattr(self, "val_dataset") and self.val_dataset is not None else "?"
             logger.info(f"setup_dataloaders: split complete → {n_train} train + {n_val} val")
 
+            # RadialGraph C extension always upcasts coords/forces to float64.
+            # Cast fingerprints back to float32 to match model parameters, otherwise
+            # the forward pass hits a dtype mismatch and training fails silently.
+            if torch.get_default_dtype() == torch.float32:
+                n_cast = 0
+                for graph_ds in [self.train_dataset, self.val_dataset]:
+                    if graph_ds is None or not hasattr(graph_ds, "dataset"):
+                        continue
+                    for config in graph_ds.dataset:
+                        fp = getattr(config, "fingerprint", None)
+                        if fp is None:
+                            continue
+                        if hasattr(fp, "coords") and fp.coords is not None:
+                            fp.coords = fp.coords.to(torch.float32)
+                        if hasattr(fp, "forces") and fp.forces is not None:
+                            fp.forces = fp.forces.to(torch.float32)
+                        n_cast += 1
+                logger.info(f"setup_dataloaders: cast {n_cast} fingerprints to float32")
+
             try:
                 from torch_geometric.data.lightning_datamodule import LightningDataset
             except ImportError:
@@ -154,6 +181,24 @@ def get_kliff_trainer_class():
                 num_workers=0,
             )
             logger.info("setup_dataloaders: data_module ready (num_workers=0)")
+
+        def _get_pl_trainer(self):
+            import os
+            import pytorch_lightning as pl
+
+            num_nodes = int(os.getenv("SLURM_JOB_NUM_NODES", 1))
+            strategy = self.training_manifest.get("strategy", "auto")
+            accelerator = self.training_manifest.get("accelerator", "auto")
+            return pl.Trainer(
+                logger=[self.tb_logger, self.csv_logger],
+                max_epochs=self.optimizer_manifest["epochs"],
+                accelerator=accelerator,
+                strategy=strategy,
+                callbacks=self.callbacks,
+                num_nodes=num_nodes,
+                num_sanity_val_steps=0,
+                enable_progress_bar=False,
+            )
 
         def train(self):
             from loguru import logger
