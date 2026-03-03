@@ -328,7 +328,10 @@ def train_mace(
         "metrics": metrics,
         "next_step": (
             f"KIM model saved at {kim_model_dir}. "
-            "Use use_model to run inference or calculate properties with the trained model."
+            "To run inference: use create_structure to build a structure file (e.g. "
+            "formula='Si', crystal_structure='diamond', repeat=[2,2,2]), then pass "
+            "output_file to use_model as input_file. Or pass formula+crystal_structure "
+            "+repeat directly to use_model."
         ),
     }
 
