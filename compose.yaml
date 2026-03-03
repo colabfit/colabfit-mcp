@@ -8,6 +8,8 @@ services:
         GROUP_ID: ${GROUP_ID:-1000}
     user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
     stdin_open: true
+    environment:
+      - COLABFIT_DATA_ROOT=/home/mcpuser/colabfit
     env_file:
       - path: .env
         required: false

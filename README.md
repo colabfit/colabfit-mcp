@@ -222,7 +222,7 @@ Container managed by Docker Compose:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `COLABFIT_DATA_ROOT` | `./colabfit_data` | **Host directory** for datasets and models (bind mount) |
+| `COLABFIT_DATA_ROOT` | `./colabfit_data` | Host-side bind-mount source directory. Inside the container the data root is always `/home/mcpuser/colabfit`. |
 | `USER_ID` | `1000` | User ID for container (should match host user) |
 | `GROUP_ID` | `1000` | Group ID for container (should match host user) |
 | `FOUNDATION_MODEL` | `small` | MACE-MP-0 foundation size: `small`, `medium`, or `large` |
@@ -237,7 +237,9 @@ Container managed by Docker Compose:
 **Data Storage:**
 
 By default, models and datasets are stored in `./colabfit_data/` (relative to the
-project root), making data portable with the project. To use a fixed location that
+project root), making data portable with the project. `COLABFIT_DATA_ROOT` controls
+only the **host-side** bind-mount source — the container-internal data root is always
+`/home/mcpuser/colabfit` regardless of this setting. To use a fixed host location that
 persists across project clones, set `COLABFIT_DATA_ROOT` in `.env`:
 
 ```bash
@@ -274,7 +276,9 @@ over a network port.
 
 After training or fine-tuning, the model directory contains several `.model` files.
 Use `<model_name>_stagetwo.model` for inference — it is the SWA-averaged final model
-and generally has the best accuracy.
+and generally has the best accuracy. This file is only produced when SWA is enabled
+(the default). If SWA was disabled, use `<model_name>.model` instead. The `use_model`
+tool's `model_path` parameter must point to the specific `.model` file.
 
 ### Attaching a MACE Calculator to ASE Atoms
 
