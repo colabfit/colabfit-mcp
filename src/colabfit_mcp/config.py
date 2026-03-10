@@ -26,6 +26,7 @@ DATA_ROOT = Path(os.environ.get("COLABFIT_DATA_ROOT", str(Path.home() / "colabfi
 DOWNLOAD_DIR = DATA_ROOT / "datasets"
 MODEL_DIR = DATA_ROOT / "models"
 INFERENCE_DIR = DATA_ROOT / "inference_output"
+TEST_DRIVER_DIR = DATA_ROOT / "test_driver_output"
 
 _host_root_str = os.environ.get("HOST_DATA_ROOT", "")
 HOST_DATA_ROOT: Path | None = Path(_host_root_str) if _host_root_str else None
@@ -41,6 +42,9 @@ def container_to_host(container_path: "str | Path") -> "str | None":
     except ValueError:
         return None
 
+
+for _d in [DOWNLOAD_DIR, MODEL_DIR, INFERENCE_DIR, TEST_DRIVER_DIR]:
+    _d.mkdir(parents=True, exist_ok=True)
 
 COLABFIT_ENERGY_KEY = "energy"
 COLABFIT_FORCES_KEY = "forces"

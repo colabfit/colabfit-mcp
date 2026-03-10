@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from colabfit_mcp.config import INFERENCE_DIR
 from colabfit_mcp.helpers.structures import build_atoms, validate_structure_inputs
 
@@ -42,11 +40,9 @@ def create_structure(
     except Exception as e:
         return {"success": False, "error": f"Failed to build structure: {e}"}
 
+    from colabfit_mcp.helpers.naming import make_timestamp, structure_file_name
     INFERENCE_DIR.mkdir(parents=True, exist_ok=True)
-    struct_tag = (crystal_structure or "molecule").lower()
-    repeat_tag = f"_{'x'.join(str(r) for r in repeat)}" if repeat else ""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = INFERENCE_DIR / f"{formula}_{struct_tag}{repeat_tag}_{timestamp}.extxyz"
+    output_path = INFERENCE_DIR / structure_file_name(formula, crystal_structure, repeat, make_timestamp())
 
     try:
         from ase.io import write

@@ -136,7 +136,6 @@ def get_kliff_trainer_class():
                 super().setup_dataset()
 
         def setup_dataloaders(self):
-            import torch
             from loguru import logger
 
             n_total = (
@@ -151,36 +150,15 @@ def get_kliff_trainer_class():
             n_val = len(self.val_dataset) if hasattr(self, "val_dataset") and self.val_dataset is not None else "?"
             logger.info(f"setup_dataloaders: split complete → {n_train} train + {n_val} val")
 
-            # RadialGraph C extension always upcasts coords/forces to float64.
-            # Cast fingerprints back to float32 to match model parameters, otherwise
-            # the forward pass hits a dtype mismatch and training fails silently.
-            if torch.get_default_dtype() == torch.float32:
-                n_cast = 0
-                for graph_ds in [self.train_dataset, self.val_dataset]:
-                    if graph_ds is None or not hasattr(graph_ds, "dataset"):
-                        continue
-                    for config in graph_ds.dataset:
-                        fp = getattr(config, "fingerprint", None)
-                        if fp is None:
-                            continue
-                        if hasattr(fp, "coords") and fp.coords is not None:
-                            fp.coords = fp.coords.to(torch.float32)
-                        if hasattr(fp, "forces") and fp.forces is not None:
-                            fp.forces = fp.forces.to(torch.float32)
-                        n_cast += 1
-                logger.info(f"setup_dataloaders: cast {n_cast} fingerprints to float32")
+            # WORKAROUND REMOVED: float32 fingerprint cast moved to kliff/kliff/trainer/lightning_trainer.py
+            # setup_dataloaders() in the base class now casts fp.coords/fp.forces to float32
+            # after fingerprinting when torch.get_default_dtype() == torch.float32.
 
-            try:
-                from torch_geometric.data.lightning_datamodule import LightningDataset
-            except ImportError:
-                from torch_geometric.data.lightning import LightningDataset
-            self.data_module = LightningDataset(
-                self.train_dataset,
-                self.val_dataset,
-                batch_size=self.optimizer_manifest["batch_size"],
-                num_workers=0,
-            )
-            logger.info("setup_dataloaders: data_module ready (num_workers=0)")
+            # WORKAROUND REMOVED: LightningDataset(num_workers=0) override moved to KLIFF source.
+            # The base class had `if num_workers:` which treated 0 as falsy, defaulting to
+            # SLURM_CPUS_PER_TASK. Fixed in KLIFF to `if num_workers is not None:` so the
+            # manifest value of 0 is respected.
+            logger.info("setup_dataloaders: data_module ready")
 
         def _get_pl_trainer(self):
             import os
@@ -211,5 +189,14 @@ def get_kliff_trainer_class():
             callbacks = super()._get_callbacks()
             callbacks.append(EpochProgressLogger())
             return callbacks
+
+        # WORKAROUND REMOVED: save_kim_model override no longer needed.
+        # Two fixes were made directly in kliff/kliff/trainer/lightning_trainer.py:
+        #   1. deepcopy replaced with direct state_dict load (deepcopy failed on e3nn's
+        #      SphericalHarmonics which stores a torch.jit.ScriptFunction as an attribute).
+        #   2. weights_only=False added to torch.load for PyTorch >= 2.6 compatibility.
+        # The TorchScript failure (aten::get_default_dtype) was fixed in
+        # klay/klay/layers/embedding/_one_hot.py by replacing torch.get_default_dtype()
+        # with a registered buffer whose .dtype is readable in TorchScript.
 
     return KliffTrainerWithDataset

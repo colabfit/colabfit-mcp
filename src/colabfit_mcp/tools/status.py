@@ -1,6 +1,6 @@
 import shutil
 
-from colabfit_mcp.config import DOWNLOAD_DIR, INFERENCE_DIR, MODEL_DIR
+from colabfit_mcp.config import DOWNLOAD_DIR, INFERENCE_DIR, MODEL_DIR, TEST_DRIVER_DIR
 
 
 def check_status() -> dict:
@@ -22,6 +22,7 @@ def check_status() -> dict:
             "datasets": str(DOWNLOAD_DIR),
             "models": str(MODEL_DIR),
             "inference_output": str(INFERENCE_DIR),
+            "test_driver_output": str(TEST_DRIVER_DIR),
             "note": (
                 "All paths are inside the Docker container. "
                 "Use these base paths when passing file paths to other tools."

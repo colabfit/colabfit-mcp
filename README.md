@@ -37,10 +37,10 @@ cp example.env .env
 
 ```bash
 # Default location
-mkdir -p ./colabfit_data/models ./colabfit_data/datasets ./colabfit_data/inference_output
+mkdir -p ./colabfit_data/models ./colabfit_data/datasets ./colabfit_data/inference_output ./colabfit_data/test_driver_output
 
 # Or custom location (must match COLABFIT_DATA_ROOT in .env)
-mkdir -p /your/custom/path/{models,datasets,inference_output}
+mkdir -p /your/custom/path/{models,datasets,inference_output,test_driver_output}
 ```
 
 #### 3. Build with user ID mapping
@@ -78,23 +78,60 @@ Add to your Claude Desktop config (`Settings > Developer > Edit Config`):
 }
 ```
 
+### Generic MCP Client Setup
+
+The server uses standard MCP `stdio` transport and works with any MCP-compatible client.
+
+**Entry point** (after pip install or in the Docker container):
+
+```bash
+colabfit-mcp          # registered console script
+# or
+python -m colabfit_mcp
+```
+
+**Testing with mcp-cli:**
+
+```bash
+pip install mcp-cli
+mcp-cli run colabfit-mcp -- colabfit-mcp
+```
+
+**Any stdio MCP client** can register the server using the same `command` / `args` pattern as Claude Desktop above. All tools use standard MCP `stdio` transport — no HTTP server or open port is required.
+
+> Note: Docker is required for training and inference (heavy dependencies). The `search_datasets`, `check_local_datasets`, `download_dataset`, and `check_status` tools work without Docker via a plain pip install.
+
 ## Tools
 
 | Tool | Description |
 |------|-------------|
 | `search_datasets` | Search ColabFit database by text, elements, properties, software |
 | `check_local_datasets` | Scan local data directory for downloaded datasets, filter by elements/properties |
-| `download_dataset` | Download a dataset from HuggingFace via KLIFF, save as extxyz |
+| `download_dataset` | Download a dataset from HuggingFace via KLIFF |
 | `train_mace` | Train a MACE-style KLAY model from scratch using KLIFF |
 | `use_model` | Run energy/forces/relax calculations with a trained KLAY model, or generate a Python snippet |
 | `check_status` | Check GPU, packages, disk, existing models and datasets |
+| `list_test_drivers` | List available kimvv test drivers, optionally filtered by property keyword |
+| `run_test_driver` | Run a kimvv test driver against a trained KLAY model; saves `structures.extxyz` + `results.json` in a timestamped subdirectory; supports multiple structures per call |
+
+### Available Test Drivers (kimvv)
+
+| Test Driver | Description | Properties |
+|---|---|---|
+| `EquilibriumCrystalStructure` | Equilibrium lattice parameters and cohesive energy | lattice-constant, cohesive-energy |
+| `ElasticConstantsCrystal` | Full elastic constants tensor at zero temperature | elastic-constants |
+| `CrystalStructureAndEnergyVsPressure` | Crystal structure and energy as a function of pressure | energy-vs-pressure |
+| `GroundStateCrystalStructure` | Lowest energy crystal structure among candidates | ground-state-structure |
+| `VacancyFormationEnergyRelaxationVolumeCrystal` | Vacancy formation energy and relaxation volume | vacancy-formation-energy, relaxation-volume |
+| `ClusterEnergyAndForces` | BFGS relaxation of an atomic cluster in a non-periodic box. Use for molecular/non-periodic models. | energy, atomic-forces, relaxed-positions |
 
 ## Typical Workflow
 
 1. `search_datasets` — find datasets with the elements/properties you need
-2. `download_dataset` — download from HuggingFace and convert to extxyz
+2. `download_dataset` — download from HuggingFace (cached locally for reuse)
 3. `train_mace` — train a MACE-style KLAY model on the downloaded data
-4. `use_model` — run calculations or generate a reusable Python script
+4. `use_model` — run energy/forces/relax calculations or generate a Python snippet
+5. `run_test_driver` — validate the model against OpenKIM-style property tests
 
 ## Sample Prompts
 
@@ -120,9 +157,21 @@ The following prompts work directly in Claude Code or Claude Desktop once the MC
 
 > Generate a Python snippet to run the energy calculation on bulk silicon using my KLAY model.
 
+**Validate with test drivers:**
+
+> What test drivers are available for validating my model?
+
+> Run the ElasticConstantsCrystal test driver on my silicon model at /home/mcpuser/colabfit/models/si_mace/si_mace__MO_000000000000_000.
+
+> Run the EquilibriumCrystalStructure and VacancyFormationEnergyRelaxationVolumeCrystal tests on my copper FCC model.
+
 **Check status:**
 
 > Check my GPU status and list all the models and datasets I have locally.
+
+**End-to-end workflow:**
+
+> Search ColabFit for silicon datasets with forces, download the best one, train a MACE model, calculate energy and forces on bulk diamond-cubic silicon, then run the ElasticConstantsCrystal and EquilibriumCrystalStructure test drivers to validate the model. Report the elastic constants and equilibrium lattice parameter when done.
 
 ## Stopping / Canceling Training
 
@@ -244,8 +293,8 @@ server container
 └── Training via KLIFF GNNLightningTrainer
 ```
 
-Datasets are downloaded from HuggingFace (`colabfit/` org) as parquet files via KLIFF's
-`Dataset.from_huggingface`, then converted to extxyz. Models are MACE-style graphs
+Datasets are downloaded from HuggingFace (`colabfit/` org) as parquet/arrow files via KLIFF's
+`Dataset.from_huggingface` and cached locally. Models are MACE-style graphs
 built with KLAY and trained with KLIFF's Lightning trainer.
 
 Container managed by Docker Compose:
@@ -261,7 +310,7 @@ Container managed by Docker Compose:
 | `BATCH_SIZE` | `4` | Training batch size. Decrease if OOM. |
 | `TRAIN_SIZE` | `0` | Number of training configs (0 = auto 90% split) |
 | `VAL_SIZE` | `0` | Number of validation configs (0 = auto 10% split) |
-| `KLIFF_DTYPE` | `float64` | Training precision (`float64` recommended for MACE) |
+| `KLIFF_DTYPE` | `float32` | Training precision (`float32` default; use `float64` for higher accuracy) |
 | `COLABFIT_BASE_URL` | `https://materials.colabfit.org` | ColabFit API base URL (used by search) |
 | `COLABFIT_AUTH_USER` | `mcp-tool` | ColabFit API auth username (used by search) |
 | `COLABFIT_AUTH_PASS` | `mcp-secret` | ColabFit API auth password (used by search) |

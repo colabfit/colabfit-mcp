@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 
 from colabfit_mcp.config import INFERENCE_DIR
@@ -75,10 +74,9 @@ def use_model(
         return {"success": False, "error": f"Model directory not found: {model_path}"}
 
     model_pt = model_dir / "model.pt"
-    model_state_pt = model_dir / "model_state.pt"
     param_file = model_dir / "kliff_graph.param"
-    if not model_pt.exists() and not model_state_pt.exists():
-        return {"success": False, "error": f"Neither model.pt nor model_state.pt found in {model_path}"}
+    if not model_pt.exists():
+        return {"success": False, "error": f"model.pt not found in {model_path}"}
     if not param_file.exists():
         return {"success": False, "error": f"kliff_graph.param not found in {model_path}"}
 
@@ -186,11 +184,11 @@ def _build_atom_frames(formula, crystal_structure, lattice_constant, repeat, str
     return [atoms], [label]
 
 
-def _write_extxyz(atoms_list: list, output_tag: str) -> Path:
+def _write_extxyz(atoms_list: list, model_id: str, output_tag: str) -> Path:
     from ase.io import write
+    from colabfit_mcp.helpers.naming import make_timestamp, inference_file_name
     INFERENCE_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = INFERENCE_DIR / f"{output_tag}_{timestamp}.extxyz"
+    output_path = INFERENCE_DIR / inference_file_name(model_id, output_tag, make_timestamp())
     write(str(output_path), atoms_list, format="extxyz")
     return output_path
 
@@ -217,24 +215,12 @@ def _run_calculations(
     if not params.get("species") or not params.get("cutoff"):
         return {"success": False, "error": f"Could not parse {param_file}"}
 
+    model_pt = model_dir / "model.pt"
     try:
-        model_state_pt = model_dir / "model_state.pt"
-        yaml_path = model_dir / "mace_model.yaml"
-        if model_state_pt.exists() and yaml_path.exists():
-            import yaml as _yaml
-            from omegaconf import OmegaConf
-            from klay.builder import build_model
-            with open(yaml_path) as f:
-                cfg_dict = _yaml.safe_load(f)
-            model = build_model(OmegaConf.create(cfg_dict))
-            state_dict = torch.load(str(model_state_pt), map_location=device, weights_only=False)
-            model.load_state_dict(state_dict)
-            model = model.to(device)
-        else:
-            try:
-                model = torch.jit.load(str(model_dir / "model.pt"), map_location=device)
-            except Exception:
-                model = torch.load(str(model_dir / "model.pt"), map_location=device, weights_only=False)
+        try:
+            model = torch.jit.load(str(model_pt), map_location=device)
+        except Exception:
+            model = torch.load(str(model_pt), map_location=device, weights_only=False)
         model.eval()
         try:
             model_dtype = next(model.parameters()).dtype
@@ -248,6 +234,20 @@ def _run_calculations(
         cutoff=params["cutoff"],
         n_layers=params["n_layers"],
     )
+
+    model_species_set = set(params["species"])
+    for atoms, label in zip(atoms_list, labels):
+        frame_elements = set(atoms.get_chemical_symbols())
+        unknown = frame_elements - model_species_set
+        if unknown:
+            return {
+                "success": False,
+                "error": (
+                    f"Structure {label!r} contains elements {sorted(unknown)} "
+                    f"not in model species {params['species']}. "
+                    "Re-train the model on a dataset that includes these elements."
+                ),
+            }
 
     frames_results = []
     result_atoms_list = []
@@ -296,14 +296,29 @@ def _run_calculations(
             if "relax" in calculations:
                 frame_result["relaxed_positions"] = atoms.get_positions().tolist()
                 frame_result["relaxed_cell"] = atoms.get_cell().tolist()
+        except RuntimeError as e:
+            if "device-side assert" in str(e) or "CUDA error" in str(e):
+                return {
+                    "success": False,
+                    "cuda_context_poisoned": True,
+                    "error": (
+                        "CUDA device-side assert triggered — the CUDA context is now corrupted. "
+                        "All further GPU operations in this session will fail. "
+                        "Restart the MCP server (restart Claude Code) to recover."
+                    ),
+                    "next_step": "Restart the MCP server by restarting Claude Code.",
+                }
+            frame_result["error"] = str(e)
         except Exception as e:
             frame_result["error"] = str(e)
         frames_results.append(frame_result)
         result_atoms_list.append(atoms)
 
+    from colabfit_mcp.helpers.naming import extract_model_id
+    model_id = extract_model_id(model_dir)
     result = {"success": True, "mode": "run", "frames": frames_results}
     try:
-        output_path = _write_extxyz(result_atoms_list, output_tag)
+        output_path = _write_extxyz(result_atoms_list, model_id, output_tag)
         result["output_file"] = str(output_path)
     except Exception as e:
         result["output_file_warning"] = f"Results computed but extxyz write failed: {e}"
@@ -411,6 +426,13 @@ def _build_snippet(
             cutoff_val = repr(parsed["cutoff"])
         if parsed.get("n_layers"):
             n_layers_val = parsed["n_layers"]
+    model_pt_str = str(model_dir / "model.pt")
+    model_load_lines = [
+        "try:",
+        f"    model = torch.jit.load({model_pt_str!r}, map_location=dev)",
+        "except Exception:",
+        f"    model = torch.load({model_pt_str!r}, map_location=dev, weights_only=False)",
+    ]
     lines = [
         "import numpy as np",
         "import torch",
@@ -421,11 +443,8 @@ def _build_snippet(
         "",
         _structure_creation(formula, crystal_structure, lattice_constant),
         "",
-        f"model_dir = {str(model_dir)!r}",
-        "try:",
-        "    model = torch.jit.load(f\"{model_dir}/model.pt\")",
-        "except Exception:",
-        "    model = torch.load(f\"{model_dir}/model.pt\", weights_only=False)",
+        f"dev = torch.device({device!r})",
+        *model_load_lines,
         "model.eval()",
         "",
         f"species = {species_val}",
@@ -438,7 +457,6 @@ def _build_snippet(
         "    energy=0.0, forces=np.zeros((len(atoms), 3)),",
         ")",
         "graph = transform(config)",
-        f"dev = torch.device({device!r})",
         "model_dtype = next(model.parameters()).dtype",
         "coords = graph.coords.clone().detach().to(model_dtype).to(dev).requires_grad_(True)",
         "energy = model(",

@@ -23,7 +23,7 @@ from colabfit_mcp.tools.dataset_resolver import resolve_dataset
 
 def train_mace(
     train_file: str | None = None,
-    model_name: str = "colabfit_mace",
+    model_name: str | None = None,
     r_max: float = 5.0,
     max_num_epochs: int = 100,
     batch_size: int | None = None,
@@ -53,15 +53,16 @@ def train_mace(
         layers share the same edge_index0. This is correct for MACE — do not
         confuse model n_layers with RadialGraph n_layers.
 
-        TorchScript export fails for this architecture because OneHotAtomEncoding
-        calls torch.get_default_dtype(), which TorchScript cannot trace. The model
-        is saved instead via torch.save(model, "model.pt"), which use_model loads
-        with torch.load(..., weights_only=False). This is handled automatically.
+        The model is exported via KLIFF's save_kim_model(), which uses
+        torch.jit.script with an e3nn.util.jit fallback to handle e3nn layers
+        (e.g. OneHotAtomEncoding). The result is a portable TorchScript model.pt
+        compatible with the KIM TorchML driver.
 
     Args:
         train_file: Path to an existing extxyz file inside the container to use
             as training data. If None, auto-discovers from local downloaded datasets.
-        model_name: Name for the trained model (default "colabfit_mace").
+        model_name: Name for the trained model. If None, auto-generated from
+            dataset name (dataset provenance) or elements.
         r_max: Cutoff radius in Angstroms (default 5.0). Typical: 4-6 Å. Start
             with ~1.5x the nearest-neighbor distance. Larger = more context,
             higher cost.
@@ -110,30 +111,45 @@ def train_mace(
             "error": f"Missing dependency: {e}. Install with pip install '.[full]'.",
         }
 
-    from datetime import datetime
+    from colabfit_mcp.helpers.naming import (
+        make_timestamp,
+        make_model_stem,
+        model_dir_name,
+        kim_model_dir_name,
+        training_log_name,
+    )
 
-    model_dir = MODEL_DIR / model_name
-    kim_model_name = f"{model_name}__MO_000000000000_000"
+    if train_file is None:
+        dataset_info, info = resolve_dataset(elements=elements)
+        if dataset_info is None:
+            return info
+        dataset_safe_name = dataset_info["safe_name"]
+    else:
+        dataset_info = None
+        dataset_safe_name = None
+
+    run_ts = make_timestamp()
+    stem = make_model_stem(model_name, dataset_safe_name, elements)
+    model_dir_basename = model_dir_name(stem, run_ts)
+    model_dir = MODEL_DIR / model_dir_basename
+    kim_model_name = kim_model_dir_name(model_dir_basename)
     kim_model_dir = model_dir / kim_model_name
     kim_model_dir.mkdir(parents=True, exist_ok=True)
 
-    run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_path = kim_model_dir / f"training_{run_ts}.log"
+    log_path = kim_model_dir / training_log_name(run_ts)
     sink_id = logger.add(
         str(log_path),
         format="{time:HH:mm:ss} | {level:<8} | {message}",
         level="DEBUG",
         colorize=False,
     )
-    logger.info(f"=== Training: {model_name} ===")
+    logger.info(f"=== Training: {model_dir_basename} ===")
 
     if train_file is None:
-        dataset_info, info = resolve_dataset(elements=elements)
-        if dataset_info is None:
-            logger.remove(sink_id)
-            return info
-
-        logger.info(f"Loading dataset from HuggingFace: {dataset_info['hf_id']}")
+        logger.info(
+            f"Loading dataset from local cache"
+            f" (source: ColabFit/HuggingFace — {dataset_info['hf_id']})"
+        )
         try:
             kliff_dataset = Dataset.from_huggingface(
                 dataset_info["hf_id"],
@@ -143,10 +159,10 @@ def train_mace(
             )
         except Exception as e:
             logger.remove(sink_id)
-            return {"success": False, "error": f"Failed to load dataset from HuggingFace: {e}"}
+            return {"success": False, "error": f"Failed to load dataset from local cache: {e}"}
 
         fix_species_types(kliff_dataset.configs)
-        dataset_elements = elements or dataset_info["analysis"].get("elements", [])
+        dataset_elements = dataset_info["analysis"].get("elements", [])
         dataset_path = Path(dataset_info["output_dir"])
 
     else:
@@ -175,7 +191,7 @@ def train_mace(
                 "analysis": analysis,
             }
 
-        dataset_elements = elements or analysis.get("elements", [])
+        dataset_elements = analysis.get("elements", [])
         dataset_path = train_path.parent
 
     # Overwrite with actual loaded count — metadata can be stale and cause KLIFF
@@ -251,9 +267,11 @@ def train_mace(
         f" | correlation={defaults['correlation']}"
     )
 
+    _hf_id = dataset_info["hf_id"] if train_file is None else None
+    _dataset_name = dataset_info["safe_name"] if train_file is None else None
     manifest = build_training_manifest(
         dataset_path=dataset_path,
-        model_name=model_name,
+        model_name=model_dir_basename,
         model_dir=model_dir,
         elements=dataset_elements,
         r_max=r_max,
@@ -266,6 +284,8 @@ def train_mace(
         device=device,
         n_configs=n_configs,
         num_workers=defaults["num_workers"],
+        dataset_name=_dataset_name,
+        hf_id=_hf_id,
     )
 
     effective_train = manifest["training"]["training_dataset"]["train_size"]
@@ -289,6 +309,21 @@ def train_mace(
     logger.info("Calling trainer.train() — next log from inside KLIFF")
     try:
         trainer.train()
+    except RuntimeError as e:
+        logger.error(f"Training exception: {e}")
+        logger.remove(sink_id)
+        if "device-side assert" in str(e) or "CUDA error" in str(e):
+            return {
+                "success": False,
+                "cuda_context_poisoned": True,
+                "error": (
+                    "CUDA device-side assert triggered — the CUDA context is now corrupted. "
+                    "All further GPU operations in this session will fail. "
+                    "Restart the MCP server (restart Claude Code) to recover."
+                ),
+                "next_step": "Restart the MCP server by restarting Claude Code.",
+            }
+        return {"success": False, "error": diagnose_failure(e)}
     except Exception as e:
         logger.error(f"Training exception: {e}")
         logger.remove(sink_id)
@@ -297,7 +332,7 @@ def train_mace(
     logger.info("Training complete.")
 
     try:
-        _save_model_fallback(trainer, kim_model_dir, dataset_elements, r_max, kliff_dataset)
+        trainer.save_kim_model()
     except Exception as save_err:
         logger.error(f"Model save failed: {save_err}")
 
@@ -328,85 +363,17 @@ def train_mace(
         "metrics": metrics,
         "next_step": (
             f"KIM model saved at {kim_model_dir}. "
-            "To run inference: use create_structure to build a structure file (e.g. "
-            "formula='Si', crystal_structure='diamond', repeat=[2,2,2]), then pass "
-            "output_file to use_model as input_file. Or pass formula+crystal_structure "
-            "+repeat directly to use_model."
+            "INFERENCE: call use_model with formula+crystal_structure+repeat, or "
+            "create_structure first then pass output_file to use_model as input_file. "
+            "TEST DRIVERS: ALWAYS call list_test_drivers() first — it returns "
+            "crystal_structure_info (exact formula requirements per structure type), "
+            "crystal_structure_examples (verified material→structure+lattice_constant mappings), "
+            "and per-driver workflow guidance. Key rules: "
+            "(1) crystal_structure must be an ASE bulk() name, not a mineral name — "
+            "e.g. TiO2 uses crystal_structure='fluorite' lattice_constant=4.59, NOT 'tetragonal' or 'rutile'; "
+            "(2) lattice_constant is ALWAYS required for compound formulas "
+            "(rocksalt/zincblende/wurtzite/cesiumchloride/fluorite); "
+            "(3) ClusterEnergyAndForces auto-converts crystal structures to non-periodic clusters "
+            "when crystal_structure is passed — do not call create_structure first."
         ),
     }
-
-
-def _write_kliff_graph_param(kim_model_dir: Path, elements: list[str], r_max: float) -> None:
-    """Write kliff_graph.param so use_model can build the RadialGraph transform."""
-    content = f"{len(elements)}\n{' '.join(elements)}\nGraph\n{r_max}\n1\n"
-    (kim_model_dir / "kliff_graph.param").write_text(content)
-
-
-def _build_trace_inputs(kliff_dataset, elements: list[str], r_max: float):
-    """Return CPU tensors (species, coords, edge_index0, contributions) for torch.jit.trace."""
-    import torch
-    from kliff.transforms.configuration_transforms.graphs.generate_graph import RadialGraph
-
-    transform = RadialGraph(species=elements, cutoff=r_max, n_layers=1)
-    graph = transform(kliff_dataset.configs[0])
-    return (
-        graph.species,
-        graph.coords.to(torch.float32),
-        graph.edge_index0,
-        graph.contributions,
-    )
-
-
-def _save_model_fallback(
-    trainer, kim_model_dir: Path, elements: list[str], r_max: float, kliff_dataset=None
-) -> None:
-    import torch
-    from loguru import logger
-
-    try:
-        trainer.configuration_transform.export_kim_model(str(kim_model_dir), "model_state.pt")
-    except Exception:
-        _write_kliff_graph_param(kim_model_dir, elements, r_max)
-
-    model = trainer.pl_model.model.cpu()
-
-    run_dir = Path(trainer.current.get("run_dir", ""))
-    ckpt_dir = run_dir / "checkpoints"
-    if ckpt_dir.exists():
-        ckpts = sorted(ckpt_dir.glob("*.pth")) + sorted(ckpt_dir.glob("*.ckpt"))
-        if ckpts:
-            ckpt = torch.load(str(ckpts[-1]), weights_only=False)
-            if isinstance(ckpt, dict) and "state_dict" in ckpt:
-                model_state = {
-                    k[len("model."):]: v
-                    for k, v in ckpt["state_dict"].items()
-                    if k.startswith("model.")
-                }
-                if model_state:
-                    model.load_state_dict(model_state, strict=False)
-
-    if kliff_dataset is not None:
-        try:
-            class _Wrapper(torch.nn.Module):
-                def __init__(self, m):
-                    super().__init__()
-                    self.m = m
-
-                def forward(self, species, coords, edge_index0, contributions):
-                    return self.m(
-                        species=species,
-                        coords=coords,
-                        edge_index0=edge_index0,
-                        contributions=contributions,
-                    )
-
-            inputs = _build_trace_inputs(kliff_dataset, elements, r_max)
-            traced = torch.jit.trace(_Wrapper(model), inputs)
-            torch.jit.save(traced, str(kim_model_dir / "model.pt"))
-            logger.info(f"Saved traced model to {kim_model_dir / 'model.pt'}")
-            return
-        except Exception as trace_err:
-            logger.warning(f"torch.jit.trace failed ({trace_err}), saving state dict instead")
-
-    torch.save(model.state_dict(), str(kim_model_dir / "model_state.pt"))
-    logger.info(f"Saved model_state.pt to {kim_model_dir}")

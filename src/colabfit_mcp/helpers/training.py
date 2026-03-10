@@ -22,14 +22,11 @@ def build_mace_klay_config(
             "inputs": {"x": "model_inputs.species"},
         },
         "edge_features": {
-            "type": "ArbitraryModule",
-            "config": {
-                "target": "klay.layers.embedding._edge.SphericalHarmonicEdgeAttrs",
-                "args": [lmax],
-            },
+            "type": "SphericalHarmonicEdgeAttrs",
+            "config": {"lmax": lmax},
             "inputs": {
-                "0": "model_inputs.coords",
-                "1": "model_inputs.edge_index0",
+                "pos": "model_inputs.coords",
+                "edge_index": "model_inputs.edge_index0",
             },
             "output": {0: "vectors", 1: "edge_lengths", 2: "edge_sh"},
         },
@@ -134,6 +131,8 @@ def build_training_manifest(
     device: str,
     n_configs: int,
     num_workers: int = 0,
+    dataset_name: str | None = None,
+    hf_id: str | None = None,
 ) -> dict[str, Any]:
     """Return a KLIFF GNNLightningTrainer manifest dict.
 
@@ -155,6 +154,11 @@ def build_training_manifest(
         "dataset": {
             "type": "path",
             "path": str(dataset_path),
+            "colabfit_dataset": {
+                "database_name": "ColabFit Exchange" if hf_id else None,
+                "database_url": f"https://huggingface.co/datasets/{hf_id}" if hf_id else None,
+                "dataset_name": dataset_name,
+            },
         },
         "transforms": {
             "configuration": {

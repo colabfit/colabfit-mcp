@@ -8,11 +8,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common ca-certificates build-essential wget git cmake && \
+    software-properties-common ca-certificates build-essential wget git cmake units && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update && apt-get install -y --no-install-recommends \
     python3.12 python3.12-dev python3.12-venv && \
     rm -rf /var/lib/apt/lists/*
+
+RUN wget -q https://github.com/aflow-org/aflow/releases/download/v4.0.5/aflow-4.0.5-ubuntu22-amd64.deb \
+    -O /tmp/aflow.deb && dpkg -i /tmp/aflow.deb && rm /tmp/aflow.deb
 
 # Miniforge for kim-api (conda-forge only, no Anaconda ToS issues)
 RUN wget -q https://github.com/conda-forge/miniforge/releases/download/25.1.1-2/Miniforge3-Linux-x86_64.sh -O /tmp/mc.sh \
@@ -53,9 +56,9 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install pytorch-lightning==2.
 RUN --mount=type=cache,target=/root/.cache/pip pip install jsonargparse==4.40.0
 RUN --mount=type=cache,target=/root/.cache/pip pip install torch_ema==0.3.0 tensorboardX
 
-RUN git clone --depth 1 https://github.com/openkim/klay.git /opt/klay \
+RUN git clone --depth 1 https://github.com/gpwolfe/klay.git@colabfit_mcp_edit /opt/klay \
     && pip install /opt/klay
-RUN --mount=type=cache,target=/root/.cache/pip pip install git+https://github.com/openkim/kliff.git
+RUN --mount=type=cache,target=/root/.cache/pip pip install git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit
 
 COPY pyproject.toml README.md LICENSE /app/
 COPY src/ /app/src/
@@ -70,7 +73,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libgomp1 && \
+    ca-certificates libgomp1 units && \
     rm -rf /var/lib/apt/lists/*
 
 ARG USER_ID=1000
@@ -81,12 +84,13 @@ RUN groupadd -g ${GROUP_ID} mcpuser && \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/conda /opt/conda
+COPY --from=builder /usr/bin/aflow /usr/bin/aflow
 
 ENV PATH="/opt/venv/bin:/opt/conda/bin:$PATH"
 ENV LD_LIBRARY_PATH="/opt/conda/lib:${LD_LIBRARY_PATH:-}"
 
 RUN mkdir -p /home/mcpuser/colabfit/models /home/mcpuser/colabfit/datasets \
-    /home/mcpuser/colabfit/inference_output && \
+    /home/mcpuser/colabfit/inference_output /home/mcpuser/colabfit/test_driver_output && \
     chown -R mcpuser:mcpuser /home/mcpuser && \
     chmod 755 /home/mcpuser
 
