@@ -56,10 +56,6 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install pytorch-lightning==2.
 RUN --mount=type=cache,target=/root/.cache/pip pip install jsonargparse==4.40.0
 RUN --mount=type=cache,target=/root/.cache/pip pip install torch_ema==0.3.0 tensorboardX
 
-RUN git clone --depth 1 https://github.com/gpwolfe/klay.git@colabfit_mcp_edit /opt/klay \
-    && pip install /opt/klay
-RUN --mount=type=cache,target=/root/.cache/pip pip install git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit
-
 COPY pyproject.toml README.md LICENSE /app/
 COPY src/ /app/src/
 WORKDIR /app

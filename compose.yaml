@@ -10,6 +10,7 @@ services:
     stdin_open: true
     environment:
       HOST_DATA_ROOT: ${HOST_DATA_ROOT:-}
+      HF_TOKEN: ${HF_TOKEN:-}
     env_file:
       - path: .env
         required: false

@@ -1,5 +1,5 @@
-import importlib
 import json
+import os
 from pathlib import Path
 
 from ase.io import write as ase_write
@@ -10,14 +10,12 @@ from colabfit_mcp.helpers.crystal_data import (
     _CRYSTAL_STRUCTURE_EXAMPLES,
     _CRYSTAL_STRUCTURE_INFO,
 )
+from colabfit_mcp.helpers.driver_worker import _execute_driver
 from colabfit_mcp.helpers.kim_runner import (
     _KIMVV_TEST_DRIVERS,
-    check_element_compatibility,
     load_klay_calculator,
     parse_model_params,
-    run_cluster_energy_and_forces,
 )
-from colabfit_mcp.helpers.structures import build_atoms, validate_structure_inputs
 
 
 def list_test_drivers(property_keyword: str | None = None) -> dict:
@@ -88,6 +86,7 @@ def run_test_driver(
     device: str | None = None,
     input_file: str | None = None,
     structures: list[dict] | None = None,
+    async_mode: bool = False,
 ) -> dict:
     """Run a kimvv test driver against a trained KLAY model.
 
@@ -107,6 +106,11 @@ def run_test_driver(
         input_file: Container extxyz path. ClusterEnergyAndForces only; single-structure only.
         structures: Multi-structure list. Each dict: formula (required), crystal_structure,
             lattice_constant (optional — fall through to top-level params).
+        async_mode: If True, launches the driver as a background subprocess and returns
+            immediately with status info. Use check_test_driver_result(output_dir)
+            to retrieve results when done. Recommended for slow drivers:
+            CrystalStructureAndEnergyVsPressure, GroundStateCrystalStructure,
+            VacancyFormationEnergyRelaxationVolumeCrystal.
 
     Returns:
         Dict with success, test_driver, model_name, n_structures, output_dir,
@@ -130,6 +134,19 @@ def run_test_driver(
                 f"Valid options: {list(_KIMVV_TEST_DRIVERS.keys())}"
             ),
         }
+
+    if async_mode:
+        from colabfit_mcp.helpers.driver_worker import launch_driver_background
+        return launch_driver_background(
+            model_path=model_path,
+            test_driver_name=test_driver_name,
+            formula=formula,
+            crystal_structure=crystal_structure,
+            lattice_constant=lattice_constant,
+            device=device,
+            input_file=input_file,
+            structures=structures,
+        )
 
     is_cluster = test_driver_name == "ClusterEnergyAndForces"
 
@@ -165,100 +182,13 @@ def run_test_driver(
     except Exception as e:
         return {"success": False, "error": f"Failed to load model: {e}"}
 
-    if not is_cluster:
-        try:
-            kimvv = importlib.import_module("kimvv")
-            TestDriverClass = getattr(kimvv, test_driver_name)
-        except ImportError:
-            return {
-                "success": False,
-                "error": "kimvv is not installed. Rebuild the Docker image to include it.",
-            }
-        except AttributeError:
-            return {
-                "success": False,
-                "error": f"kimvv.{test_driver_name} not found in this kimvv version.",
-            }
-
-    atoms_list = []
-    results_list = []
-
-    for i, struct in enumerate(structures):
-        f = struct.get("formula") or formula
-        cs = struct.get("crystal_structure") or crystal_structure
-        lc = struct.get("lattice_constant") or lattice_constant
-
-        compat_err = check_element_compatibility(params["species"], f)
-        if compat_err:
-            return {"success": False, "error": f"Structure {i} ({f}): {compat_err}"}
-
-        if is_cluster:
-            if input_file is not None and len(structures) == 1:
-                try:
-                    from ase.io import read
-                    atoms = read(input_file)
-                except Exception as e:
-                    return {"success": False, "error": f"Failed to read input_file: {e}"}
-            else:
-                err = validate_structure_inputs(f, None)
-                if err:
-                    return {"success": False, "error": f"Structure {i} ({f}): {err}"}
-                try:
-                    atoms = build_atoms(f, "molecule", lc)
-                except Exception:
-                    if cs is None:
-                        return {
-                            "success": False,
-                            "error": (
-                                f"Structure {i}: '{f}' is not a recognized ASE molecule name. "
-                                f"Known molecule names: {_ASE_MOLECULE_NAMES}. "
-                                "For crystal formulas, also pass crystal_structure."
-                            ),
-                        }
-                    try:
-                        atoms = build_atoms(f, cs, lc)
-                    except Exception as e:
-                        return {"success": False, "error": f"Structure {i} ({f}): failed to build: {e}"}
-        else:
-            if cs is None:
-                return {
-                    "success": False,
-                    "error": (
-                        f"Structure {i} ({f}): {test_driver_name} requires crystal_structure. "
-                        f"Valid values: {sorted(_CRYSTAL_STRUCTURE_INFO.keys())}."
-                    ),
-                }
-            err = validate_structure_inputs(f, cs)
-            if err:
-                return {"success": False, "error": f"Structure {i} ({f}): {err}"}
-            try:
-                atoms = build_atoms(f, cs, lc)
-            except Exception as e:
-                return {"success": False, "error": f"Structure {i} ({f}): failed to build: {e}"}
-
-        atoms.info["formula"] = f
-        atoms.info["crystal_structure"] = cs or ""
-        if lc is not None:
-            atoms.info["lattice_constant"] = lc
-        atoms.info["frame_index"] = i
-        atoms_list.append(atoms)
-
-        try:
-            if is_cluster:
-                raw = run_cluster_energy_and_forces(calc, atoms.copy())
-            else:
-                driver = TestDriverClass(calc)
-                driver(atoms.copy())
-                raw = driver.property_instances
-        except Exception as e:
-            return {"success": False, "error": f"Structure {i} ({f}): driver failed: {e}"}
-
-        results_list.append({
-            "formula": f,
-            "crystal_structure": cs,
-            "lattice_constant": lc,
-            "properties": raw,
-        })
+    result = _execute_driver(
+        structures, formula, crystal_structure, lattice_constant,
+        input_file, params, calc, test_driver_name, is_cluster,
+    )
+    if isinstance(result, dict):
+        return result
+    atoms_list, results_list = result
 
     from colabfit_mcp.helpers.naming import make_timestamp, extract_model_id, test_driver_dir_name
     ts = make_timestamp()
@@ -294,3 +224,79 @@ def run_test_driver(
         "results_file_host": container_to_host(json_path),
         "results": results_list,
     }
+
+
+def check_test_driver_result(output_dir: str) -> dict:
+    """Check status of an async test driver job and return results when done.
+
+    Args:
+        output_dir: Container path returned by run_test_driver with async_mode=True.
+
+    Returns:
+        Dict with status ("running", "completed", or "failed") and full inline results
+        when completed (same structure as sync run_test_driver success response).
+    """
+    out_dir = Path(output_dir)
+    status_path = out_dir / "status.json"
+    if not status_path.exists():
+        return {"success": False, "error": "Output dir not found or job not started"}
+
+    with open(status_path) as fh:
+        status = json.load(fh)
+
+    job_status = status.get("status")
+    pid = status.get("pid")
+
+    if job_status == "running":
+        alive = False
+        if pid is not None:
+            try:
+                os.kill(pid, 0)
+                alive = True
+            except (OSError, ProcessLookupError):
+                pass
+        if alive:
+            return {"success": True, "status": "running", "pid": pid, "process_alive": True}
+        # Process is dead but status.json was never updated — self-heal
+        json_path = out_dir / "results.json"
+        if json_path.exists():
+            # Completed but status update was missed
+            status["status"] = "completed"
+            with open(status_path, "w") as fh:
+                json.dump(status, fh, indent=2)
+            job_status = "completed"
+        else:
+            err = "Worker process died without writing results (check worker.log for details)"
+            status.update({"status": "failed", "error": err})
+            with open(status_path, "w") as fh:
+                json.dump(status, fh, indent=2)
+            return {"success": False, "status": "failed", "error": err, "worker_log": str(out_dir / "worker.log")}
+
+    if job_status == "failed":
+        return {"success": False, "status": "failed", "error": status.get("error")}
+
+    if job_status == "completed":
+        json_path = out_dir / "results.json"
+        try:
+            with open(json_path) as fh:
+                data = json.load(fh)
+        except Exception as e:
+            return {"success": False, "error": f"Failed to read results.json: {e}"}
+        meta = data.get("metadata", {})
+        extxyz_path = out_dir / "structures.extxyz"
+        return {
+            "success": True,
+            "status": "completed",
+            "test_driver": meta.get("test_driver"),
+            "model_name": meta.get("model_name"),
+            "n_structures": meta.get("n_structures"),
+            "output_dir": str(out_dir),
+            "output_dir_host": container_to_host(out_dir),
+            "structures_file": str(extxyz_path),
+            "structures_file_host": container_to_host(extxyz_path),
+            "results_file": str(json_path),
+            "results_file_host": container_to_host(json_path),
+            "results": data.get("results", []),
+        }
+
+    return {"success": False, "error": f"Unknown status: {job_status!r}"}

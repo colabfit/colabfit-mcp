@@ -1,4 +1,18 @@
 import logging
+import warnings
+
+
+def _configure_logging():
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    warnings.filterwarnings("ignore", message=".*unauthenticated.*HF Hub.*")
+    try:
+        from loguru import logger as _loguru_logger
+        _loguru_logger.disable("kliff.transforms.configuration_transforms.descriptors")
+    except ImportError:
+        pass
+
+
+_configure_logging()
 
 from mcp.server.fastmcp import FastMCP
 
@@ -27,9 +41,10 @@ except ImportError as e:
     logger.warning(f"Training/inference tools disabled: {e}. Install with [full] extras.")
 
 try:
-    from colabfit_mcp.tools.test_driver import list_test_drivers, run_test_driver
+    from colabfit_mcp.tools.test_driver import check_test_driver_result, list_test_drivers, run_test_driver
     mcp.tool()(list_test_drivers)
     mcp.tool()(run_test_driver)
+    mcp.tool()(check_test_driver_result)
 except ImportError as e:
     logger.warning(f"Test driver tools disabled: {e}. Install with [full] extras.")
 

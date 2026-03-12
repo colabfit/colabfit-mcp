@@ -69,7 +69,7 @@ def parse_model_params(model_dir: Path) -> dict:
 class KlayASECalculator(Calculator):
     """ASE Calculator subclass wrapping a KLAY model for use with kimvv test drivers."""
 
-    implemented_properties = ["energy", "forces"]
+    implemented_properties = ["energy", "free_energy", "forces", "stress"]
 
     def __init__(self, model, transform, params: dict, device: str, **kwargs):
         super().__init__(**kwargs)
@@ -124,10 +124,16 @@ class KlayASECalculator(Calculator):
         )
         (grad,) = torch.autograd.grad(energy_t.sum(), coords_t, create_graph=False)
         forces_t = -scatter_add(grad, images_t, dim=0)[:n_orig]
+        energy = float(energy_t.sum().item())
         self.results = {
-            "energy": float(energy_t.sum().item()),
+            "energy": energy,
+            "free_energy": energy,
             "forces": forces_t.detach().cpu().numpy(),
         }
+        if "stress" in properties:
+            saved = dict(self.results)
+            self.results["stress"] = self.calculate_numerical_stress(atoms)
+            self.results.update(saved)
 
 
 def run_cluster_energy_and_forces(calc: KlayASECalculator, atoms) -> dict:

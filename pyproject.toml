@@ -29,8 +29,8 @@ keywords = [
 
 [project.optional-dependencies]
 full = [
-    "klay @ git+https://github.com/openkim/klay.git",
-    "kliff @ git+https://github.com/openkim/kliff.git",
+    "klay @ git+https://github.com/gpwolfe/klay.git@colabfit_mcp_edits",
+    "kliff @ git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit",
     "pytorch-lightning>=2.0",
     "torch_geometric",
     "torch_scatter",
@@ -39,6 +39,8 @@ full = [
     "ase",
     "datasets>=2.0",
     "huggingface_hub",
+    "kim-tools",
+    "kimvv",
 ]
 
 [tool.setuptools.packages.find]

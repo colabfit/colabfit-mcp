@@ -292,7 +292,14 @@ def _run_calculations(
                 forces_t = -scatter_add(grad, images_t, dim=0)[:n_orig]
                 frame_result["forces_eV_per_Ang"] = forces_t.detach().cpu().tolist()
             if "stress" in calculations:
-                frame_result["stress_note"] = "Stress calculation requires PBC and is not yet implemented."
+                from colabfit_mcp.helpers.kim_runner import KlayASECalculator
+                stress_calc = KlayASECalculator(
+                    model=model, transform=transform, params=params, device=device
+                )
+                atoms_s = atoms.copy()
+                atoms_s.calc = stress_calc
+                stress_calc.calculate(atoms_s, properties=["energy", "forces", "stress"])
+                frame_result["stress_eV_per_Ang3"] = stress_calc.results["stress"].tolist()
             if "relax" in calculations:
                 frame_result["relaxed_positions"] = atoms.get_positions().tolist()
                 frame_result["relaxed_cell"] = atoms.get_cell().tolist()
