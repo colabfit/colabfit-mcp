@@ -64,7 +64,7 @@ def check_local_datasets(
         meta_path = ds_dir / "dataset.json"
         if not meta_path.exists():
             continue
-        with open(meta_path) as f:
+        with open(meta_path, encoding="utf-8") as f:
             meta = json.load(f)
         all_datasets.append({
             "dataset_dir": ds_dir.name,

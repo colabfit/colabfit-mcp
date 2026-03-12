@@ -1,4 +1,4 @@
-def fix_species_types(configs) -> None:
+def fix_species_types(configs: list) -> None:
     """Convert atomic-number species to element symbols in-place.
 
     Dataset.from_huggingface stores species as ints (e.g. 42 for Mo);
@@ -10,7 +10,7 @@ def fix_species_types(configs) -> None:
             config._species = [chemical_symbols[int(s)] for s in config._species]
 
 
-def analyze_configs(configs) -> dict:
+def analyze_configs(configs: list) -> dict:
     """Analyze KLIFF Configuration objects for training suitability.
 
     config.species may be element symbols (str) or atomic numbers (int) depending

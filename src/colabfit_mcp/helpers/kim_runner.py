@@ -57,12 +57,13 @@ def parse_model_params(model_dir: Path) -> dict:
         idx += 1
         result["species"] = lines[idx].split()
         idx += 1
-        idx += 1
+        idx += 1  # line 2: cutoff count (number of cutoff values, always 1 — skipped)
         result["cutoff"] = float(lines[idx])
         idx += 1
         result["n_layers"] = int(lines[idx])
-    except (IndexError, ValueError):
-        pass
+    except (IndexError, ValueError) as e:
+        from loguru import logger
+        logger.warning(f"parse_model_params: failed to parse {param_file}: {e}")
     return result
 
 
@@ -78,10 +79,8 @@ class KlayASECalculator(Calculator):
         self.params = params
         self.device = device
         import torch
-        try:
-            self.model_dtype = next(model.parameters()).dtype
-        except StopIteration:
-            self.model_dtype = torch.float32
+        _p = next(model.parameters(), None)
+        self.model_dtype = _p.dtype if _p is not None else torch.float32
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         import numpy as np
@@ -171,7 +170,7 @@ def load_klay_calculator(model_dir: Path, device: str) -> KlayASECalculator:
             from omegaconf import OmegaConf
             from klay.builder import build_model
 
-            with open(yaml_path) as f:
+            with open(yaml_path, encoding="utf-8") as f:
                 cfg_dict = _yaml.safe_load(f)
             model = build_model(OmegaConf.create(cfg_dict))
             state_dict = torch.load(str(model_state_pt), map_location=device, weights_only=False)

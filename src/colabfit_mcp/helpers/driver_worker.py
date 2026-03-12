@@ -27,10 +27,11 @@ def _execute_driver(
     calc,
     test_driver_name: str,
     is_cluster: bool,
-) -> tuple[list, list] | dict:
+) -> dict:
     """Build structures, call driver, accumulate results.
 
-    Returns (atoms_list, results_list) on success or {"success": False, "error": ...} on failure.
+    Returns {"success": True, "atoms_list": ..., "results_list": ...} on success
+    or {"success": False, "error": ...} on failure.
     """
     if not is_cluster:
         try:
@@ -48,6 +49,7 @@ def _execute_driver(
         f = struct.get("formula") or formula
         cs = struct.get("crystal_structure") or crystal_structure
         lc = struct.get("lattice_constant") or lattice_constant
+        repeat = struct.get("repeat")
 
         compat_err = check_element_compatibility(params["species"], f)
         if compat_err:
@@ -77,7 +79,7 @@ def _execute_driver(
                             ),
                         }
                     try:
-                        atoms = build_atoms(f, cs, lc)
+                        atoms = build_atoms(f, cs, lc, repeat)
                     except Exception as e:
                         return {"success": False, "error": f"Structure {i} ({f}): failed to build: {e}"}
         else:
@@ -93,7 +95,7 @@ def _execute_driver(
             if err:
                 return {"success": False, "error": f"Structure {i} ({f}): {err}"}
             try:
-                atoms = build_atoms(f, cs, lc)
+                atoms = build_atoms(f, cs, lc, repeat)
             except Exception as e:
                 return {"success": False, "error": f"Structure {i} ({f}): failed to build: {e}"}
 
@@ -121,7 +123,7 @@ def _execute_driver(
             "properties": raw,
         })
 
-    return atoms_list, results_list
+    return {"success": True, "atoms_list": atoms_list, "results_list": results_list}
 
 
 def launch_driver_background(
@@ -153,21 +155,23 @@ def launch_driver_background(
         "structures": structures,
         "timestamp": ts,
     }
-    with open(out_dir / "job.json", "w") as fh:
+    with open(out_dir / "job.json", "w", encoding="utf-8") as fh:
         json.dump(job, fh, indent=2)
 
     status_path = out_dir / "status.json"
-    with open(status_path, "w") as fh:
+    with open(status_path, "w", encoding="utf-8") as fh:
         json.dump({"status": "running", "pid": None, "started": ts, "error": None}, fh, indent=2)
 
+    log_fh = open(out_dir / "worker.log", "w", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "-m", "colabfit_mcp.helpers.driver_worker", str(out_dir)],
-        stdout=open(out_dir / "worker.log", "w"),
+        stdout=log_fh,
         stderr=subprocess.STDOUT,
         start_new_session=True,
         cwd=str(out_dir),
     )
-    with open(status_path, "w") as fh:
+    log_fh.close()
+    with open(status_path, "w", encoding="utf-8") as fh:
         json.dump({"status": "running", "pid": proc.pid, "started": ts, "error": None}, fh, indent=2)
 
     return {
@@ -190,15 +194,15 @@ def run_driver_job(job_dir: Path) -> None:
 
     def _update_status(data: dict) -> None:
         try:
-            with open(status_path) as fh:
+            with open(status_path, encoding="utf-8") as fh:
                 current = json.load(fh)
         except Exception:
             current = {}
         current.update(data)
-        with open(status_path, "w") as fh:
+        with open(status_path, "w", encoding="utf-8") as fh:
             json.dump(current, fh, indent=2)
 
-    with open(job_dir / "job.json") as fh:
+    with open(job_dir / "job.json", encoding="utf-8") as fh:
         job = json.load(fh)
 
     test_driver_name = job["test_driver_name"]
@@ -236,17 +240,17 @@ def run_driver_job(job_dir: Path) -> None:
         structures, formula, crystal_structure, lattice_constant,
         input_file, params, calc, test_driver_name, is_cluster,
     )
-    if isinstance(result, dict):
+    if not result["success"]:
         _update_status({"status": "failed", "error": result.get("error")})
         raise RuntimeError(result.get("error"))
 
-    atoms_list, results_list = result
+    atoms_list, results_list = result["atoms_list"], result["results_list"]
 
     extxyz_path = job_dir / "structures.extxyz"
     ase_write(str(extxyz_path), atoms_list, format="extxyz")
 
     json_path = job_dir / "results.json"
-    with open(json_path, "w") as fh:
+    with open(json_path, "w", encoding="utf-8") as fh:
         json.dump(
             {
                 "metadata": {
@@ -275,12 +279,12 @@ if __name__ == "__main__":
     except BaseException as _e:
         _sp = _job_dir / "status.json"
         try:
-            with open(_sp) as _fh:
+            with open(_sp, encoding="utf-8") as _fh:
                 _s = json.load(_fh)
         except Exception:
             _s = {}
         if _s.get("status") == "running":
             _s.update({"status": "failed", "error": f"Worker process exited unexpectedly: {_e}"})
-            with open(_sp, "w") as _fh:
+            with open(_sp, "w", encoding="utf-8") as _fh:
                 json.dump(_s, _fh, indent=2)
         raise

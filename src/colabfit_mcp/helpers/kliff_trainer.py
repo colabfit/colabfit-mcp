@@ -91,7 +91,7 @@ def get_kliff_trainer_class():
 
                 for attr in ["species", "coords", "energy", "forces", "images", "contributions", "edge_index0"]:
                     val = getattr(batch, attr, None)
-                    if val is not None:
+                    if val is not None and hasattr(val, "shape"):
                         logger.info(f"  batch.{attr}: shape={tuple(val.shape)} dtype={val.dtype}")
                     else:
                         logger.warning(f"  batch.{attr}: MISSING")

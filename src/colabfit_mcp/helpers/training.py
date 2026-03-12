@@ -111,7 +111,7 @@ def write_mace_yaml(config: dict, yaml_path: Path) -> Path:
     """Write a KLAY model config dict to a YAML file."""
     import yaml
 
-    with open(yaml_path, "w") as f:
+    with open(yaml_path, "w", encoding="utf-8") as f:
         yaml.dump(config, f, default_flow_style=False)
     return yaml_path
 
@@ -200,7 +200,7 @@ def parse_kliff_metrics(model_dir: Path) -> dict[str, Any]:
     try:
         import csv
 
-        with open(csv_path) as f:
+        with open(csv_path, encoding="utf-8") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
         if not rows:
@@ -212,8 +212,9 @@ def parse_kliff_metrics(model_dir: Path) -> dict[str, Any]:
                     metrics[key] = float(val)
                 except (ValueError, TypeError):
                     pass
-    except Exception:
-        pass
+    except Exception as e:
+        from loguru import logger
+        logger.warning(f"parse_kliff_metrics: failed to read {csv_path}: {e}")
     return metrics
 
 
@@ -245,7 +246,9 @@ def estimate_avg_num_neighbors(
             total_edges += graph.edge_index0.shape[1]
             total_atoms += int(graph.num_nodes)
         return total_edges / total_atoms if total_atoms > 0 else 20.0
-    except Exception:
+    except Exception as e:
+        from loguru import logger
+        logger.warning(f"estimate_avg_num_neighbors: falling back to 20.0: {e}")
         return 20.0
 
 

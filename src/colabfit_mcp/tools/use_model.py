@@ -222,10 +222,8 @@ def _run_calculations(
         except Exception:
             model = torch.load(str(model_pt), map_location=device, weights_only=False)
         model.eval()
-        try:
-            model_dtype = next(model.parameters()).dtype
-        except StopIteration:
-            model_dtype = torch.float32
+        _p = next(model.parameters(), None)
+        model_dtype = _p.dtype if _p is not None else torch.float32
     except Exception as e:
         return {"success": False, "error": f"Failed to load model: {e}"}
 
@@ -350,10 +348,8 @@ class _KliffInlineCalculator:
         self.device = device
         self.n_orig = n_orig
         self.results = {}
-        try:
-            self.model_dtype = next(model.parameters()).dtype
-        except StopIteration:
-            self.model_dtype = torch.float32
+        _p = next(model.parameters(), None)
+        self.model_dtype = _p.dtype if _p is not None else torch.float32
 
     def calculate(self, atoms, properties=None, system_changes=None):
         import numpy as np

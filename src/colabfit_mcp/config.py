@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 
-def _env_int(key: str, default: str) -> int:
+def _env_int(key: str, default: int | str) -> int:
     value = os.environ.get(key) or default
     try:
         return int(value)

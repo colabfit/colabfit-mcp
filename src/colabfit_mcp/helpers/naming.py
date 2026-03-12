@@ -34,7 +34,7 @@ def kim_model_dir_name(model_dir_stem: str) -> str:
     return f"{model_dir_stem}{KIM_SUFFIX}"
 
 
-def extract_model_id(model_path) -> str:
+def extract_model_id(model_path: "str | Path") -> str:
     return Path(model_path).parent.name
 
 

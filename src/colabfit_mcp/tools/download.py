@@ -84,7 +84,7 @@ def download_dataset(
     meta_path = output_dir / "dataset.json"
 
     if meta_path.exists():
-        with open(meta_path) as f:
+        with open(meta_path, encoding="utf-8") as f:
             cached = json.load(f)
         if dataset_id is None or cached.get("dataset_id") == dataset_id:
             return {
@@ -132,7 +132,7 @@ def download_dataset(
         "dataset_id": dataset_id,
         "analysis": analysis,
     }
-    with open(meta_path, "w") as f:
+    with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
     return {

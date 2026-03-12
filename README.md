@@ -112,7 +112,8 @@ mcp-cli run colabfit-mcp -- colabfit-mcp
 | `use_model` | Run energy/forces/relax calculations with a trained KLAY model, or generate a Python snippet |
 | `check_status` | Check GPU, packages, disk, existing models and datasets |
 | `list_test_drivers` | List available kimvv test drivers, optionally filtered by property keyword |
-| `run_test_driver` | Run a kimvv test driver against a trained KLAY model; saves `structures.extxyz` + `results.json` in a timestamped subdirectory; supports multiple structures per call |
+| `run_test_driver` | Run a kimvv test driver against a trained KLAY model; saves `structures.extxyz` + `results.json` in a timestamped subdirectory; supports multiple structures per call with optional `repeat` for supercell sizing and `async_mode` for slow drivers |
+| `check_test_driver_result` | Check status of an async test driver job and return inline results when complete |
 
 ### Available Test Drivers (kimvv)
 
@@ -307,7 +308,8 @@ Container managed by Docker Compose:
 | `COLABFIT_DATA_ROOT` | `./colabfit_data` | **Host directory** for datasets and models (bind mount) |
 | `USER_ID` | `1000` | User ID for container (should match host user) |
 | `GROUP_ID` | `1000` | Group ID for container (should match host user) |
-| `BATCH_SIZE` | `4` | Training batch size. Decrease if OOM. |
+| `KLIFF_BATCH_SIZE` | `4` | Training batch size. Decrease if OOM. |
+| `KLIFF_NUM_WORKERS` | `0` | DataLoader worker processes. Keep at 0 to avoid CUDA fork deadlocks. |
 | `TRAIN_SIZE` | `0` | Number of training configs (0 = auto 90% split) |
 | `VAL_SIZE` | `0` | Number of validation configs (0 = auto 10% split) |
 | `KLIFF_DTYPE` | `float32` | Training precision (`float32` default; use `float64` for higher accuracy) |
@@ -390,7 +392,7 @@ config = Configuration(
 graph = transform(config)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-coords = graph.coords.clone().detach().to(torch.float64).to(device).requires_grad_(True)
+coords = graph.coords.clone().detach().to(torch.float32).to(device).requires_grad_(True)
 energy = model(
     species=graph.species.to(device),
     coords=coords,

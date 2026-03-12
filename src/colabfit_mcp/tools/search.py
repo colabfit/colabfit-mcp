@@ -64,9 +64,9 @@ def search_datasets(
 
     ## SEARCHING BY TEXT
 
-    The text parameter matches against dataset name AND description fields.
+    The text parameter matches against the dataset description field.
     All words in the text string must appear (AND logic). Example:
-      text="silicon bulk crystal" returns datasets whose name or description
+      text="silicon bulk crystal" returns datasets whose description
       contains all three words "silicon", "bulk", and "crystal".
 
     ## WORKFLOW NOTES
@@ -79,7 +79,7 @@ def search_datasets(
     - Pass the 'id' field from results to download_dataset as dataset_id.
 
     Args:
-        text: Search dataset name and description fields (all words must match).
+        text: Search the dataset description field (all words must match).
         elements: Chemical elements the dataset must contain (e.g. ["Si", "O"]).
         property_types: Additional required properties beyond energy + forces,
             e.g. ["cauchy_stress"].

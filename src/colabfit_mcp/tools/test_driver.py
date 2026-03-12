@@ -64,8 +64,8 @@ def list_test_drivers(property_keyword: str | None = None) -> dict:
                 "Driver auto-makes cell non-periodic. Do NOT call create_structure first."
             ),
             "multi_structure": (
-                "Pass structures=[{'formula':..., 'crystal_structure':..., 'lattice_constant':...}, ...] "
-                "to run multiple structures. Results saved in one subdirectory."
+                "Pass structures=[{'formula':..., 'crystal_structure':..., 'lattice_constant':..., 'repeat': [nx,ny,nz]}, ...] "
+                "to run multiple structures (optionally as supercells). Results saved in one subdirectory."
             ),
             "critical_mistakes_to_avoid": [
                 "Do NOT use 'tetragonal' for TiO2 — tetragonal is single-element only.",
@@ -105,7 +105,8 @@ def run_test_driver(
         device: "cuda", "cpu", or None (auto-detected).
         input_file: Container extxyz path. ClusterEnergyAndForces only; single-structure only.
         structures: Multi-structure list. Each dict: formula (required), crystal_structure,
-            lattice_constant (optional — fall through to top-level params).
+            lattice_constant, repeat (optional — fall through to top-level params).
+            repeat: [nx, ny, nz] supercell repetitions (e.g. [5, 5, 2] → 50-atom Mo bcc).
         async_mode: If True, launches the driver as a background subprocess and returns
             immediately with status info. Use check_test_driver_result(output_dir)
             to retrieve results when done. Recommended for slow drivers:
@@ -186,9 +187,9 @@ def run_test_driver(
         structures, formula, crystal_structure, lattice_constant,
         input_file, params, calc, test_driver_name, is_cluster,
     )
-    if isinstance(result, dict):
+    if not result["success"]:
         return result
-    atoms_list, results_list = result
+    atoms_list, results_list = result["atoms_list"], result["results_list"]
 
     from colabfit_mcp.helpers.naming import make_timestamp, extract_model_id, test_driver_dir_name
     ts = make_timestamp()
@@ -204,7 +205,7 @@ def run_test_driver(
 
     json_path = out_dir / "results.json"
     try:
-        with open(json_path, "w") as fh:
+        with open(json_path, "w", encoding="utf-8") as fh:
             json.dump({"metadata": {"model_name": model_id, "test_driver": test_driver_name,
                         "timestamp": ts, "n_structures": len(structures)},
                        "results": results_list}, fh, indent=2, default=str)
@@ -241,7 +242,7 @@ def check_test_driver_result(output_dir: str) -> dict:
     if not status_path.exists():
         return {"success": False, "error": "Output dir not found or job not started"}
 
-    with open(status_path) as fh:
+    with open(status_path, encoding="utf-8") as fh:
         status = json.load(fh)
 
     job_status = status.get("status")
@@ -262,13 +263,13 @@ def check_test_driver_result(output_dir: str) -> dict:
         if json_path.exists():
             # Completed but status update was missed
             status["status"] = "completed"
-            with open(status_path, "w") as fh:
+            with open(status_path, "w", encoding="utf-8") as fh:
                 json.dump(status, fh, indent=2)
             job_status = "completed"
         else:
             err = "Worker process died without writing results (check worker.log for details)"
             status.update({"status": "failed", "error": err})
-            with open(status_path, "w") as fh:
+            with open(status_path, "w", encoding="utf-8") as fh:
                 json.dump(status, fh, indent=2)
             return {"success": False, "status": "failed", "error": err, "worker_log": str(out_dir / "worker.log")}
 
@@ -278,7 +279,7 @@ def check_test_driver_result(output_dir: str) -> dict:
     if job_status == "completed":
         json_path = out_dir / "results.json"
         try:
-            with open(json_path) as fh:
+            with open(json_path, encoding="utf-8") as fh:
                 data = json.load(fh)
         except Exception as e:
             return {"success": False, "error": f"Failed to read results.json: {e}"}
