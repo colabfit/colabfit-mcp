@@ -12,12 +12,10 @@ services:
       HOST_DATA_ROOT: ${HOST_DATA_ROOT:-}
       HF_TOKEN: ${HF_TOKEN:-}
     env_file:
-      - path: .env
-        required: false
+      - .env
     volumes:
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/models:/home/mcpuser/colabfit/models
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/datasets:/home/mcpuser/colabfit/datasets
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/inference_output:/home/mcpuser/colabfit/inference_output
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/test_driver_output:/home/mcpuser/colabfit/test_driver_output
     shm_size: "2gb"
-

@@ -75,7 +75,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 
-RUN groupadd -g ${GROUP_ID} mcpuser && \
+RUN if getent group ${GROUP_ID} > /dev/null 2>&1; then \
+        groupmod -n mcpuser $(getent group ${GROUP_ID} | cut -d: -f1); \
+    else \
+        groupadd -g ${GROUP_ID} mcpuser; \
+    fi && \
     useradd -u ${USER_ID} -g mcpuser -m -s /bin/bash mcpuser
 
 COPY --from=builder /opt/venv /opt/venv
