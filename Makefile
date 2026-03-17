@@ -6,8 +6,8 @@ export
 
 # Set defaults
 COLABFIT_DATA_ROOT ?= ./colabfit_data
-USER_ID ?= $(shell id -u)
-GROUP_ID ?= $(shell id -g)
+USER_ID ?= $(or $(shell id -u 2>/dev/null),1000)
+GROUP_ID ?= $(or $(shell id -g 2>/dev/null),1000)
 
 # Docker Compose project name (defaults to directory name, lowercased)
 COMPOSE_PROJECT := $(shell basename $(CURDIR) | tr '[:upper:]' '[:lower:]')
@@ -53,7 +53,7 @@ setup:
 
 fix-permissions:
 	@echo "Fixing permissions on existing data directories..."
-	@docker run --rm -v "${PWD}/${COLABFIT_DATA_ROOT}:/data" alpine sh -c "chown -R ${USER_ID}:${GROUP_ID} /data && chmod -R 755 /data"
+	@docker run --rm -v "$(CURDIR)/$(COLABFIT_DATA_ROOT):/data" alpine sh -c "chown -R ${USER_ID}:${GROUP_ID} /data && chmod -R 755 /data"
 	@echo "✓ Permissions fixed"
 
 build:

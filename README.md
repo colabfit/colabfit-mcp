@@ -340,6 +340,8 @@ automatically detects your IDs, but you can override them in `.env` if needed.
 - NVIDIA GPU + [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (optional; CPU fallback used automatically if absent)
 - Or: Python 3.10+ for local installation
 
+> **HPC / cluster users:** Docker is typically unavailable on HPC systems. Apptainer (formerly Singularity) can pull and convert Docker images (`apptainer pull docker://...`), but the Docker Compose lifecycle and `start.sh` MCP registration do not translate directly to an HPC environment. Native Apptainer/Podman support is a planned future goal.
+
 ## Troubleshooting
 
 **GPU not detected in container**: Ensure `nvidia-container-toolkit` is
