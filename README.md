@@ -2,6 +2,26 @@
 
 An MCP server for discovering [ColabFit](https://materials.colabfit.org) datasets and training MACE interatomic potentials using [KLIFF](https://kliff.readthedocs.io/) and [KLAY](https://github.com/openkim/klay).
 
+## Overview
+
+This is a **Model Context Protocol (MCP) server** that gives AI assistants the ability to:
+- Search and download scientific datasets from [ColabFit](https://materials.colabfit.org)
+- Train MACE interatomic potentials on your local hardware (GPU or CPU)
+- Run energy/forces calculations and validate models with OpenKIM test drivers
+
+It bridges conversational AI and local compute — the AI agent searches for data, trains
+models, and runs simulations on your machine through this server.
+
+## Prerequisites
+
+- **Docker and Docker Compose v2** — for the containerized server
+- **Git** — for cloning the repository
+- **make** — for the quick-start commands (optional; manual steps are documented below)
+- **(Optional) NVIDIA GPU + drivers** — for GPU-accelerated training
+- **(Optional) [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)** — required for Docker to access the GPU
+
+For local (non-Docker) installation, only Python 3.10+ is required. See [Local Installation](#local-installation-without-docker).
+
 ## Setup
 
 ### Quick Start (Recommended)
@@ -50,7 +70,7 @@ mkdir -p /your/custom/path/{models,datasets,inference_output,test_driver_output}
 USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build
 ```
 
-### 4. Register the MCP server
+### Register the MCP server
 
 `start.sh` automatically detects NVIDIA GPU availability and enables GPU passthrough when present, falling back to CPU otherwise.
 
@@ -97,7 +117,28 @@ pip install mcp-cli
 mcp-cli run colabfit-mcp -- colabfit-mcp
 ```
 
-**Any stdio MCP client** can register the server using the same `command` / `args` pattern as Claude Desktop above. All tools use standard MCP `stdio` transport — no HTTP server or open port is required.
+**Any stdio MCP client** (Gemini, OpenAI agents, Cursor, etc.) can register the server using the same `command` / `args` pattern as Claude Desktop above. The protocol is standardized — all tools use MCP `stdio` transport, no HTTP server or open port is required.
+
+**Python SDK client example:**
+
+```python
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+params = StdioServerParameters(
+    command="/path/to/colabfit-mcp/start.sh",
+    args=["run", "--rm", "-i", "server"],
+)
+
+async with stdio_client(params) as (read, write):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+        result = await session.call_tool("check_status", {})
+        print(result)
+```
+
+Install the client library with `pip install mcp`. The server uses JSON-RPC 2.0 over stdio — raw `subprocess.Popen` with hand-crafted JSON will not work; use a proper MCP client library.
 
 > Note: Docker is required for training and inference (heavy dependencies). The `search_datasets`, `check_local_datasets`, `download_dataset`, and `check_status` tools work without Docker via a plain pip install.
 
@@ -330,6 +371,16 @@ cp example.env .env
 # Edit .env and set: COLABFIT_DATA_ROOT=/home/yourusername/ml_data
 ```
 
+```
+Host machine                        Docker container
+─────────────                       ────────────────
+${COLABFIT_DATA_ROOT}/              /home/mcpuser/colabfit/
+├── datasets/          ← bind mount →  ├── datasets/
+├── models/            ← bind mount →  ├── models/
+├── inference_output/  ← bind mount →  ├── inference_output/
+└── test_driver_output/← bind mount →  └── test_driver_output/
+```
+
 **User ID Mapping:**
 
 The `USER_ID` and `GROUP_ID` variables ensure the container user matches your host
@@ -338,9 +389,7 @@ automatically detects your IDs, but you can override them in `.env` if needed.
 
 ## Requirements
 
-- Docker with Compose v2
-- NVIDIA GPU + [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (optional; CPU fallback used automatically if absent)
-- Or: Python 3.10+ for local installation
+See [Prerequisites](#prerequisites) for the full list. In short: Docker + Compose v2 for the containerized server, or Python 3.10+ for local installation.
 
 > **HPC / cluster users:** Docker is typically unavailable on HPC systems. Apptainer (formerly Singularity) can pull and convert Docker images (`apptainer pull docker://...`), but the Docker Compose lifecycle and `start.sh` MCP registration do not translate directly to an HPC environment. Native Apptainer/Podman support is a planned future goal.
 
@@ -377,11 +426,13 @@ atoms = bulk("Si", "diamond", a=5.43)
 model_dir = "/home/mcpuser/colabfit/models/colabfit_mace/colabfit_mace__MO_000000000000_000"
 
 # Load model (tries TorchScript first, falls back to torch.load)
+device = "cuda" if torch.cuda.is_available() else "cpu"
 try:
-    model = torch.jit.load(f"{model_dir}/model.pt")
+    model = torch.jit.load(f"{model_dir}/model.pt", map_location=device)
 except Exception:
-    model = torch.load(f"{model_dir}/model.pt", weights_only=False)
+    model = torch.load(f"{model_dir}/model.pt", map_location=device, weights_only=False)
 model.eval()
+model_dtype = next(model.parameters()).dtype  # match training precision (float32 or float64)
 
 # Build graph — read species/cutoff from kliff_graph.param
 transform = RadialGraph(species=["Si"], cutoff=5.0, n_layers=1)
@@ -395,8 +446,7 @@ config = Configuration(
 )
 graph = transform(config)
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-coords = graph.coords.clone().detach().to(torch.float32).to(device).requires_grad_(True)
+coords = graph.coords.clone().detach().to(model_dtype).to(device).requires_grad_(True)
 energy = model(
     species=graph.species.to(device),
     coords=coords,
