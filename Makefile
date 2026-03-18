@@ -6,8 +6,11 @@ export
 
 # Set defaults
 COLABFIT_DATA_ROOT ?= ./colabfit_data
-USER_ID ?= $(shell id -u)
-GROUP_ID ?= $(shell id -g)
+USER_ID ?= $(or $(shell id -u 2>/dev/null),1000)
+GROUP_ID ?= $(or $(shell id -g 2>/dev/null),1000)
+
+# Docker Compose project name (defaults to directory name, lowercased)
+COMPOSE_PROJECT := $(shell basename $(CURDIR) | tr '[:upper:]' '[:lower:]')
 
 help:
 	@echo "ColabFit MCP - Available Commands"
@@ -15,7 +18,7 @@ help:
 	@echo "  make setup      - Create data directories and .env file"
 	@echo "  make build      - Build Docker images with current user ID"
 	@echo "  make start      - Start all services"
-	@echo "  make stop       - Stop all services"
+	@echo "  make stop       - Stop ALL containers, including active training"
 	@echo "  make restart    - Restart all services"
 	@echo "  make logs       - Follow container logs (Ctrl+C to exit)"
 	@echo "  make clean      - Stop services and remove containers"
@@ -50,12 +53,12 @@ setup:
 
 fix-permissions:
 	@echo "Fixing permissions on existing data directories..."
-	@docker run --rm -v "${PWD}/${COLABFIT_DATA_ROOT}:/data" alpine sh -c "chown -R ${USER_ID}:${GROUP_ID} /data && chmod -R 755 /data"
+	@docker run --rm -v "$(CURDIR)/$(COLABFIT_DATA_ROOT):/data" alpine sh -c "chown -R ${USER_ID}:${GROUP_ID} /data && chmod -R 755 /data"
 	@echo "✓ Permissions fixed"
 
 build:
 	@echo "Building Docker images with USER_ID=${USER_ID} GROUP_ID=${GROUP_ID}..."
-	USER_ID=${USER_ID} GROUP_ID=${GROUP_ID} docker compose build
+	USER_ID=${USER_ID} GROUP_ID=${GROUP_ID} ./start.sh build
 	@echo "✓ Build complete"
 
 start: setup
@@ -67,9 +70,13 @@ start: setup
 	@echo "Check status with: make test"
 
 stop:
-	@echo "Stopping services..."
-	docker compose down
-	@echo "✓ Services stopped"
+	@echo "Stopping all ColabFit MCP containers (including active training)..."
+	@CONTAINERS=$$(docker ps -q --filter "label=com.docker.compose.project=$(COMPOSE_PROJECT)"); \
+	 if [ -n "$$CONTAINERS" ]; then \
+	   docker stop $$CONTAINERS; \
+	 fi
+	@docker compose down 2>/dev/null || true
+	@echo "✓ All containers stopped"
 
 restart: stop start
 

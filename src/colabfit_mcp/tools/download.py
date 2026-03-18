@@ -1,94 +1,156 @@
 import json
-import re
-import shutil
-import tarfile
+from pathlib import Path
 
-import requests
+from colabfit_mcp.config import DOWNLOAD_DIR
+from colabfit_mcp.helpers.kliff_utils import analyze_configs
 
-from colabfit_mcp.config import COLABFIT_AUTH, COLABFIT_BASE_URL, DOWNLOAD_DIR
-from colabfit_mcp.helpers.xyz import analyze_xyz_files
+_ALLOWED_CACHE_EXTENSIONS = {".arrow", ".parquet", ".json"}
 
-_DATASET_ID_PATTERN = re.compile(r"^DS_[a-zA-Z0-9_]+_\d+$")
+_HF_DATASET_TRANSLATION_TABLE = str.maketrans(
+    {"(": "_", ")": "_", "@": "_", "/": "_", "+": "_"}
+)
 
 
-def download_dataset(dataset_id: str) -> dict:
-    """Download a ColabFit dataset and analyze it for training suitability.
-
-    Downloads the dataset as XYZ files, extracts them, determines elements,
-    configuration count, whether energy/forces/stress data present.
-
-    Args:
-        dataset_id: ColabFit dataset ID (e.g. "DS_zjkz9664bapl_0").
-
-    Returns:
-        Dict with file paths, analysis results, and next_step guidance.
+def _validate_hf_cache(hf_cache_dir: str, safe_name: str) -> str | None:
+    """Scan the dataset's HuggingFace cache directory and return an error message
+    if any file with an extension outside {.arrow, .parquet, .json} is found.
+    Files without extensions (HF blob hash-files) are allowed. Returns None on success.
     """
-    if not dataset_id:
-        return {"success": False, "error": "dataset_id is required"}
+    cache_path = Path(hf_cache_dir) / f"datasets--colabfit--{safe_name}"
+    if not cache_path.exists():
+        return None
+    unexpected = [
+        f.name
+        for f in cache_path.rglob("*")
+        if f.is_file() and f.suffix and f.suffix.lower() not in _ALLOWED_CACHE_EXTENSIONS
+    ]
+    if unexpected:
+        sample = ", ".join(unexpected[:5])
+        return (
+            f"Unexpected file type(s) in HuggingFace cache: {sample}. "
+            "Expected only .arrow/.parquet data files and .json metadata."
+        )
+    return None
 
-    if not _DATASET_ID_PATTERN.match(dataset_id):
-        return {
-            "success": False,
-            "error": f"Invalid dataset_id format: {dataset_id!r}. "
-            "Expected format: DS_<alphanumeric>_<version> (e.g. DS_zjkz9664bapl_0)",
-        }
+
+def download_dataset(
+    dataset_name: str,
+    dataset_id: str | None = None,
+    split: str = "train",
+    n_configs: int | None = None,
+) -> dict:
+    """Download a ColabFit dataset from HuggingFace using KLIFF Dataset.from_huggingface.
+
+    Uses KLIFF's Dataset.from_huggingface which calls datasets.load_dataset
+    internally and builds KLIFF Configuration objects directly. No intermediate
+    extxyz file is written — data lives in the HuggingFace arrow cache and in
+    a metadata JSON that train_mace uses to reload without re-downloading.
+
+    HuggingFace column defaults (from KLIFF): positions, atomic_numbers, pbc,
+    cell, energy, atomic_forces. These match the standard ColabFit HF schema.
+
+    ## IMPORTANT: n_configs does NOT reduce dataset size
+
+    n_configs limits how many configurations KLIFF builds into Configuration
+    objects during the initial load call. It does NOT download fewer data from
+    HuggingFace — the full dataset parquet/arrow files are always cached locally.
+    It does NOT produce a smaller dataset suitable for training; a model trained
+    with n_configs=150 on a 50,000-config dataset is trained on only 150 configs,
+    which will likely underfit severely.
+
+    To find datasets that actually contain ~100–200 configurations, use the
+    max_configurations parameter in search_datasets BEFORE downloading.
+
+    dataset_name: ColabFit dataset name as returned by search_datasets.
+        Special chars ((, ), @, /, +) are replaced with _ to form the HF id.
+    dataset_id: Optional DS_... ID from search results. Stored in metadata for
+        traceability; used for cache-hit detection.
+    split: HuggingFace dataset split. Nearly all ColabFit datasets only have
+        'train' — using 'test' or 'validation' will raise an error.
+    n_configs: Limits how many configurations KLIFF loads into memory. Does NOT
+        limit what is downloaded or cached. Use only for quick inspection of
+        dataset structure, NOT for creating training subsets. To find genuinely
+        small datasets, use max_configurations in search_datasets instead.
+
+    HuggingFace arrow cache: DOWNLOAD_DIR/.hf_cache/
+    Metadata JSON:           DOWNLOAD_DIR/<safe_name>/dataset.json
+    """
+    if not dataset_name:
+        return {"success": False, "error": "dataset_name is required"}
+
+    safe_name = dataset_name.translate(_HF_DATASET_TRANSLATION_TABLE)
+    hf_id = "colabfit/" + safe_name
+    output_dir = DOWNLOAD_DIR / safe_name
+    meta_path = output_dir / "dataset.json"
+
+    if meta_path.exists():
+        with open(meta_path, encoding="utf-8") as f:
+            cached = json.load(f)
+        if dataset_id is None or cached.get("dataset_id") == dataset_id:
+            return {
+                "success": True,
+                "cached": True,
+                "dataset_name": dataset_name,
+                "dataset_id": cached.get("dataset_id"),
+                "hf_id": hf_id,
+                "output_dir": str(output_dir),
+                "dataset_ref": str(meta_path),
+                "analysis": cached.get("analysis", {}),
+                "next_step": _suggest_next_step(cached.get("analysis", {})),
+            }
 
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    output_dir = DOWNLOAD_DIR / dataset_id
-    tar_path = DOWNLOAD_DIR / f"{dataset_id}.tar.gz"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    hf_cache_dir = str(DOWNLOAD_DIR / ".hf_cache")
 
     try:
-        url = f"{COLABFIT_BASE_URL}/mcp/dataset-download/xyz/" f"{dataset_id}.tar.gz"
-        with requests.get(url, stream=True, auth=COLABFIT_AUTH, timeout=300) as r:
-            r.raise_for_status()
-            with open(tar_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=10_000_000):
-                    f.write(chunk)
+        from kliff.dataset import Dataset
+    except ImportError as e:
+        return {"success": False, "error": f"Missing dependency: {e}. Install with pip install '.[full]'."}
 
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
-        output_dir.mkdir(parents=True)
-
-        with tarfile.open(tar_path, "r:gz") as tar:
-            tar.extractall(output_dir, filter="data")
-
-        xyz_files = sorted(
-            list(output_dir.rglob("*.extxyz")) + list(output_dir.rglob("*.xyz"))
+    try:
+        dataset = Dataset.from_huggingface(
+            hf_id,
+            split=split,
+            n_configs=n_configs,
+            cache_dir=hf_cache_dir,
         )
-
-        metadata = None
-        metadata_file = output_dir / "dataset.json"
-        if metadata_file.exists():
-            with open(metadata_file) as f:
-                metadata = json.load(f)
-
-        analysis = {}
-        if xyz_files:
-            analysis = analyze_xyz_files(xyz_files)
-
-        next_step = _suggest_next_step(analysis)
-
-        return {
-            "success": True,
-            "dataset_id": dataset_id,
-            "output_dir": str(output_dir),
-            "xyz_files": [str(f) for f in xyz_files],
-            "metadata": metadata,
-            "analysis": analysis,
-            "next_step": next_step,
-        }
-    except requests.exceptions.HTTPError as e:
-        return {"success": False, "error": f"HTTP error: {e}"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
-    finally:
-        tar_path.unlink(missing_ok=True)
+        return {"success": False, "error": str(e), "hf_id_tried": hf_id}
+
+    cache_error = _validate_hf_cache(hf_cache_dir, safe_name)
+    if cache_error:
+        return {"success": False, "error": cache_error, "hf_id_tried": hf_id}
+
+    analysis = analyze_configs(dataset.configs)
+    metadata = {
+        "hf_id": hf_id,
+        "split": split,
+        "n_configs_requested": n_configs,
+        "dataset_name": dataset_name,
+        "safe_name": safe_name,
+        "dataset_id": dataset_id,
+        "analysis": analysis,
+    }
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
+
+    return {
+        "success": True,
+        "cached": False,
+        "dataset_name": dataset_name,
+        "dataset_id": dataset_id,
+        "hf_id": hf_id,
+        "output_dir": str(output_dir),
+        "dataset_ref": str(meta_path),
+        "analysis": analysis,
+        "next_step": _suggest_next_step(analysis),
+    }
 
 
 def _suggest_next_step(analysis: dict) -> str:
     if not analysis:
-        return "No XYZ files found. Check the dataset format."
-
+        return "No configurations found. Check the dataset name."
     if not analysis.get("suitable_for_training"):
         missing = []
         if not analysis.get("has_energy"):
@@ -99,16 +161,10 @@ def _suggest_next_step(analysis: dict) -> str:
             f"Dataset is missing {', '.join(missing)}. "
             "Search for a dataset with energy and forces data."
         )
-
     n = analysis.get("n_configs", 0)
     if n < 50:
         return (
-            f"Only {n} configurations found. Fine-tuning MACE-MP-0 "
-            "(fine_tune_mace) is recommended for small datasets."
+            f"Only {n} configurations found. Consider searching for a larger dataset "
+            "or training with reduced epochs."
         )
-
-    return (
-        "Dataset looks suitable for training. Use fine_tune_mace "
-        "to fine-tune the MACE-MP-0 foundation model, or train_mace "
-        "to train from scratch."
-    )
+    return "Dataset looks suitable for training. Use train_mace to train from scratch."

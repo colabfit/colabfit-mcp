@@ -22,7 +22,7 @@ dist/
 colabfit_mcp.egg-info/
 
 # developer tools / caches
-ruff_cache/
+.ruff_cache/
 
 # data / notebooks / logs
 *.ipynb
