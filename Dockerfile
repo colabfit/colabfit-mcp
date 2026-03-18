@@ -16,14 +16,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -rf /var/lib/apt/lists/*
 
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        wget -q https://github.com/aflow-org/aflow/releases/download/v4.0.5/aflow-4.0.5-ubuntu22-amd64.deb \
-        -O /tmp/aflow.deb && dpkg -i /tmp/aflow.deb && rm /tmp/aflow.deb; \
+    wget -q https://github.com/aflow-org/aflow/releases/download/v4.0.5/aflow-4.0.5-ubuntu22-amd64.deb \
+    -O /tmp/aflow.deb && dpkg -i /tmp/aflow.deb && rm /tmp/aflow.deb; \
     else \
-        printf '#!/bin/sh\necho "aflow not available on this platform (%s)" >&2\nexit 1\n' "$TARGETARCH" \
-        > /usr/bin/aflow && chmod +x /usr/bin/aflow; \
+    printf '#!/bin/sh\necho "aflow not available on this platform (%s)" >&2\nexit 1\n' "$TARGETARCH" \
+    > /usr/bin/aflow && chmod +x /usr/bin/aflow; \
     fi
 
-# Miniforge for kim-api (conda-forge only, no Anaconda ToS issues)
+# Miniforge for kim-api
 RUN MINICONDA_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "x86_64") && \
     wget -q "https://github.com/conda-forge/miniforge/releases/download/25.1.1-2/Miniforge3-Linux-${MINICONDA_ARCH}.sh" \
     -O /tmp/mc.sh && bash /tmp/mc.sh -b -p /opt/conda && rm /tmp/mc.sh && \
@@ -82,9 +82,9 @@ ARG USER_ID=1000
 ARG GROUP_ID=1000
 
 RUN if getent group ${GROUP_ID} > /dev/null 2>&1; then \
-        groupmod -n mcpuser $(getent group ${GROUP_ID} | cut -d: -f1); \
+    groupmod -n mcpuser $(getent group ${GROUP_ID} | cut -d: -f1); \
     else \
-        groupadd -g ${GROUP_ID} mcpuser; \
+    groupadd -g ${GROUP_ID} mcpuser; \
     fi && \
     useradd -u ${USER_ID} -g mcpuser -m -s /bin/bash mcpuser
 

@@ -58,7 +58,7 @@ fix-permissions:
 
 build:
 	@echo "Building Docker images with USER_ID=${USER_ID} GROUP_ID=${GROUP_ID}..."
-	USER_ID=${USER_ID} GROUP_ID=${GROUP_ID} docker compose build
+	USER_ID=${USER_ID} GROUP_ID=${GROUP_ID} ./start.sh build
 	@echo "✓ Build complete"
 
 start: setup
