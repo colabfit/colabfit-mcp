@@ -78,6 +78,31 @@ Add to your Claude Desktop config (`Settings > Developer > Edit Config`):
 }
 ```
 
+**OpenAI Agent (API-based, not ChatGPT app):**
+
+OpenAI agents that support MCP can connect to this server over `stdio` by launching the same command used above.
+
+Use this command as the MCP server entrypoint:
+
+```bash
+/path/to/colabfit-mcp/start.sh
+```
+
+If your agent framework requires explicit command/args fields, use:
+
+```json
+{
+  "command": "/path/to/colabfit-mcp/start.sh",
+  "args": ["run", "--rm", "-i", "server"]
+}
+```
+
+Notes:
+
+- This is for OpenAI API-based agent runtimes that support MCP server registration.
+- The ChatGPT consumer app (including non-Pro accounts) does not provide local `stdio` MCP server registration in the same way as developer agent runtimes.
+- Replace `/path/to/colabfit-mcp` with the absolute path to this repository.
+
 ### Generic MCP Client Setup
 
 The server uses standard MCP `stdio` transport and works with any MCP-compatible client.
