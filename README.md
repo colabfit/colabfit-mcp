@@ -46,8 +46,9 @@ mkdir -p /your/custom/path/{models,datasets,inference_output,test_driver_output}
 #### 3. Build with user ID mapping
 
 ```bash
-# This ensures the container user matches your host user for proper permissions
-USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build
+# This ensures the container user matches your host user and selects the right
+# Dockerfile for your platform (CPU-only on macOS, GPU on Linux with NVIDIA)
+USER_ID=$(id -u) GROUP_ID=$(id -g) ./start.sh build
 ```
 
 ### 4. Register the MCP server

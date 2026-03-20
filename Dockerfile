@@ -27,8 +27,8 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 RUN MINICONDA_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "x86_64") && \
     wget -q "https://github.com/conda-forge/miniforge/releases/download/25.1.1-2/Miniforge3-Linux-${MINICONDA_ARCH}.sh" \
     -O /tmp/mc.sh && bash /tmp/mc.sh -b -p /opt/conda && rm /tmp/mc.sh && \
-    /opt/conda/bin/conda install -y kim-api==2.4.1 kimpy==2.1.3 && \
-    /opt/conda/bin/conda clean -afy
+    /opt/conda/bin/mamba install -y kim-api==2.4.1 kimpy==2.1.3 && \
+    /opt/conda/bin/mamba clean -afy
 ENV PATH="/opt/conda/bin:$PATH"
 
 RUN python3.12 -m venv /opt/venv
