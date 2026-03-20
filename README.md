@@ -40,7 +40,7 @@ cp example.env .env
 mkdir -p ./colabfit_data/models ./colabfit_data/datasets ./colabfit_data/inference_output ./colabfit_data/test_driver_output
 
 # Or custom location (must match COLABFIT_DATA_ROOT in .env)
-mkdir -p /your/custom/path/{models,datasets,inference_output,test_driver_output}
+# mkdir -p /your/custom/path/{models,datasets,inference_output,test_driver_output}
 ```
 
 #### 3. Build with user ID mapping
