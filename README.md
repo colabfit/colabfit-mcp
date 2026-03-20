@@ -60,14 +60,15 @@ cp example.env .env
 mkdir -p ./colabfit_data/models ./colabfit_data/datasets ./colabfit_data/inference_output ./colabfit_data/test_driver_output
 
 # Or custom location (must match COLABFIT_DATA_ROOT in .env)
-mkdir -p /your/custom/path/{models,datasets,inference_output,test_driver_output}
+# mkdir -p /your/custom/path/{models,datasets,inference_output,test_driver_output}
 ```
 
 #### 3. Build with user ID mapping
 
 ```bash
-# This ensures the container user matches your host user for proper permissions
-USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build
+# This ensures the container user matches your host user and selects the right
+# Dockerfile for your platform (CPU-only on macOS, GPU on Linux with NVIDIA)
+USER_ID=$(id -u) GROUP_ID=$(id -g) ./start.sh build
 ```
 
 ### Register the MCP server
@@ -97,6 +98,31 @@ Add to your Claude Desktop config (`Settings > Developer > Edit Config`):
   }
 }
 ```
+
+**OpenAI Agent (API-based, not ChatGPT app):**
+
+OpenAI agents that support MCP can connect to this server over `stdio` by launching the same command used above.
+
+Use this command as the MCP server entrypoint:
+
+```bash
+/path/to/colabfit-mcp/start.sh
+```
+
+If your agent framework requires explicit command/args fields, use:
+
+```json
+{
+  "command": "/path/to/colabfit-mcp/start.sh",
+  "args": ["run", "--rm", "-i", "server"]
+}
+```
+
+Notes:
+
+- This is for OpenAI API-based agent runtimes that support MCP server registration.
+- The ChatGPT consumer app (including non-Pro accounts) does not provide local `stdio` MCP server registration in the same way as developer agent runtimes.
+- Replace `/path/to/colabfit-mcp` with the absolute path to this repository.
 
 ### Generic MCP Client Setup
 
