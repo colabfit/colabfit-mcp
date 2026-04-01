@@ -32,10 +32,14 @@ mcp.tool()(check_status)
 
 try:
     from colabfit_mcp.tools.build_dataset import build_dataset
+    mcp.tool()(build_dataset)
+except ImportError as e:
+    logger.warning(f"build_dataset tool disabled: {e}. Install numpy, pyarrow, and ase.")
+
+try:
     from colabfit_mcp.tools.train import train_mace
     from colabfit_mcp.tools.use_model import use_model
     from colabfit_mcp.tools.create_structure import create_structure
-    mcp.tool()(build_dataset)
     mcp.tool()(train_mace)
     mcp.tool()(use_model)
     mcp.tool()(create_structure)

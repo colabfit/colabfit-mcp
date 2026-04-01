@@ -166,7 +166,7 @@ async with stdio_client(params) as (read, write):
 
 Install the client library with `pip install mcp`. The server uses JSON-RPC 2.0 over stdio — raw `subprocess.Popen` with hand-crafted JSON will not work; use a proper MCP client library.
 
-> Note: Docker is required for training and inference (heavy dependencies). The `search_datasets`, `check_local_datasets`, `download_dataset`, and `check_status` tools work without Docker via a plain pip install.
+> Note: Docker is required for training and inference (heavy dependencies). The `search_datasets`, `check_local_datasets`, `download_dataset`, `build_dataset`, and `check_status` tools work without Docker via a plain pip install.
 
 ## Tools
 
@@ -312,9 +312,12 @@ The pip-installed version handles GPU detection purely in Python via `detect_dev
 ### Install
 
 ```bash
-pip install colabfit-mcp                  # search, check_status only
-pip install 'colabfit-mcp[full]'          # + KLIFF/KLAY training, HuggingFace download
+pip install colabfit-mcp
 ```
+
+This enables `search_datasets`, `check_local_datasets`, `download_dataset`, `build_dataset`,
+and `check_status`. Training and inference require Docker — the full dependency stack
+(CUDA, kim-api, PyG wheels) is only supported via the Docker build.
 
 ### Register with Claude Code
 

@@ -13,6 +13,9 @@ requires-python = ">= 3.10"
 dependencies = [
     "mcp[cli]>=1.0.0",
     "requests",
+    "numpy",
+    "pyarrow",
+    "ase",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
