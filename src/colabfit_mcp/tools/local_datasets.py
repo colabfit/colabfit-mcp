@@ -49,6 +49,12 @@ def check_local_datasets(
         d for d in sorted(DOWNLOAD_DIR.iterdir())
         if d.is_dir() and not d.name.startswith(".")
     ]
+    custom_dir = DOWNLOAD_DIR / "custom"
+    if custom_dir.is_dir():
+        dataset_dirs.extend(
+            d for d in sorted(custom_dir.iterdir())
+            if d.is_dir() and not d.name.startswith(".")
+        )
 
     if not dataset_dirs:
         return {
@@ -75,6 +81,7 @@ def check_local_datasets(
             "split": meta.get("split", "train"),
             "dataset_ref": str(meta_path),
             "analysis": meta.get("analysis", {}),
+            "train_file": meta.get("train_file"),
         })
 
     matches = _filter_datasets(all_datasets, elements, property_types)
