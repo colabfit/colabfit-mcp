@@ -13,6 +13,7 @@ def _make_dataset_name(
     methods_contain=None,
     software_contain=None,
     formulae=None,
+    elements=None,
     num_configs=1000,
 ) -> str:
     """Auto-generate a filesystem-safe dataset name from filter criteria."""
@@ -23,6 +24,8 @@ def _make_dataset_name(
         parts.extend(s.replace(" ", "") for s in software_contain[:2])
     if formulae:
         parts.extend(formulae[:2])
+    if elements:
+        parts.extend(elements[:3])
     parts.append(str(num_configs))
     return re.sub(r"[^a-zA-Z0-9_]", "_", "_".join(parts))[:80]
 
@@ -119,7 +122,7 @@ def _parquet_to_extxyz(parquet_path: Path, output_path: Path) -> tuple:
 
         stress = row.get("cauchy_stress")
         if stress is not None:
-            atoms.info["stress"] = np.array(stress, dtype=float)
+            atoms.info["cauchy_stress"] = np.array(stress, dtype=float).flatten()
             found_stress = True
 
         atoms_list.append(atoms)

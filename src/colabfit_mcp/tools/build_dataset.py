@@ -27,14 +27,15 @@ def build_dataset(
     dataset_ids: list[str] | None = None,
     formulae: list[str] | None = None,
     properties: list[str] | None = None,
+    elements: list[str] | None = None,
     num_configs: int = 1000,
     dataset_name: str | None = None,
     preview_only: bool = False,
 ) -> dict:
     """Build a custom filtered dataset by querying ColabFit VastDB across all datasets.
 
-    Filters configurations by computation method, software, formula, and required
-    properties. Exports to extxyz format ready for train_mace.
+    Filters configurations by computation method, software, formula, required
+    properties, and elements present. Exports to extxyz format ready for train_mace.
 
     Re-running with the same dataset_name returns cached results. Use a different
     dataset_name to regenerate with new filters.
@@ -46,18 +47,22 @@ def build_dataset(
     dataset_ids: Restrict to specific ColabFit dataset IDs (DS_... format).
         Intersected with methods/software filters if both are provided.
     formulae: Filter by reduced chemical formula (exact match). E.g. ["TiO2", "NaCl"].
-    properties: Require these properties to be non-null. Valid values:
+    properties: Require these properties to be present. Valid values:
         energy, atomic_forces, cauchy_stress, electronic_band_gap,
         formation_energy, adsorption_energy, atomization_energy, energy_above_hull.
+        Uses boolean index columns (has_forces, has_stress) for efficient filtering.
+    elements: Require all listed element symbols to be present in each configuration.
+        E.g. ["Fe", "O"] returns only configs containing both Fe and O.
+        Uses the element_filter index column. Unknown symbols return an error.
     num_configs: Configurations to export. Range: 100–100,000. Default: 1000.
     dataset_name: Output dataset name. Auto-generated from filters if None.
     preview_only: If True, return a count estimate without generating the dataset.
     """
-    if not any([methods_contain, software_contain, dataset_ids, formulae, properties]):
+    if not any([methods_contain, software_contain, dataset_ids, formulae, properties, elements]):
         return {
             "success": False,
             "error": "At least one filter is required.",
-            "next_step": "Provide methods_contain, software_contain, dataset_ids, formulae, or properties.",
+            "next_step": "Provide methods_contain, software_contain, dataset_ids, formulae, properties, or elements.",
         }
 
     if not (100 <= num_configs <= 100_000):
@@ -68,10 +73,10 @@ def build_dataset(
         }
 
     if preview_only:
-        return _do_count(methods_contain, software_contain, dataset_ids, formulae, properties)
+        return _do_count(methods_contain, software_contain, dataset_ids, formulae, properties, elements)
 
     if not dataset_name:
-        dataset_name = _make_dataset_name(methods_contain, software_contain, formulae, num_configs)
+        dataset_name = _make_dataset_name(methods_contain, software_contain, formulae, elements, num_configs)
 
     output_dir = _CUSTOM_DIR / dataset_name
     meta_path = output_dir / "dataset.json"
@@ -82,19 +87,20 @@ def build_dataset(
     try:
         return _generate_dataset(
             methods_contain, software_contain, dataset_ids, formulae,
-            properties, num_configs, dataset_name, output_dir,
+            properties, elements, num_configs, dataset_name, output_dir,
         )
     except Exception as e:
         return {"success": False, "error": str(e), "next_step": "Check filters and try again."}
 
 
-def _do_count(methods_contain, software_contain, dataset_ids, formulae, properties) -> dict:
+def _do_count(methods_contain, software_contain, dataset_ids, formulae, properties, elements) -> dict:
     payload = {k: v for k, v in {
         "methods_contain": methods_contain,
         "software_contain": software_contain,
         "dataset_ids": dataset_ids,
         "formulae": formulae,
         "properties": properties,
+        "elements": elements,
     }.items() if v}
     resp = requests.post(
         f"{COLABFIT_BASE_URL}/mcp/builder/count",
@@ -138,7 +144,7 @@ def _load_cached(meta_path: Path, dataset_name: str, output_dir: Path) -> dict:
 
 def _generate_dataset(
     methods_contain, software_contain, dataset_ids, formulae,
-    properties, num_configs, dataset_name, output_dir,
+    properties, elements, num_configs, dataset_name, output_dir,
 ) -> dict:
     payload = {k: v for k, v in {
         "methods_contain": methods_contain,
@@ -146,6 +152,7 @@ def _generate_dataset(
         "dataset_ids": dataset_ids,
         "formulae": formulae,
         "properties": properties,
+        "elements": elements,
     }.items() if v}
     payload["num_configs"] = num_configs
 
@@ -163,7 +170,7 @@ def _generate_dataset(
     _stream_and_extract(job_id, COLABFIT_BASE_URL, COLABFIT_AUTH, output_dir)
 
     extxyz_path = output_dir / "configs.extxyz"
-    n_configs, elements, has_energy, has_forces, has_stress = _parquet_to_extxyz(
+    n_configs, found_elements, has_energy, has_forces, has_stress = _parquet_to_extxyz(
         output_dir / "configurations.parquet", extxyz_path
     )
     source_ids = _read_source_dataset_ids(output_dir)
@@ -174,6 +181,7 @@ def _generate_dataset(
         "dataset_ids": dataset_ids,
         "formulae": formulae,
         "properties": properties,
+        "elements": elements,
     }.items() if v}
 
     dataset_meta = {
@@ -187,10 +195,10 @@ def _generate_dataset(
         "has_energy": has_energy,
         "has_forces": has_forces,
         "has_stress": has_stress,
-        "elements": elements,
+        "elements": found_elements,
         "analysis": {
             "n_configs": n_configs,
-            "elements": elements,
+            "elements": found_elements,
             "has_energy": has_energy,
             "has_forces": has_forces,
             "has_stress": has_stress,
@@ -208,7 +216,7 @@ def _generate_dataset(
         "train_ready": True,
         "train_file": str(extxyz_path),
         "source_dataset_ids": source_ids,
-        "elements": elements,
+        "elements": found_elements,
         "has_energy": has_energy,
         "has_forces": has_forces,
         "has_stress": has_stress,
