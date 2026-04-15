@@ -68,11 +68,20 @@ ARG USER_ID=1000
 ARG GROUP_ID=1000
 
 RUN if getent group ${GROUP_ID} > /dev/null 2>&1; then \
-    groupmod -n mcpuser $(getent group ${GROUP_ID} | cut -d: -f1); \
+        EXISTING_GROUP="$(getent group ${GROUP_ID} | cut -d: -f1)"; \
     else \
-    groupadd -g ${GROUP_ID} mcpuser; \
+        groupadd -g ${GROUP_ID} mcpuser; \
+        EXISTING_GROUP="mcpuser"; \
     fi && \
-    useradd -u ${USER_ID} -g mcpuser -m -s /bin/bash mcpuser
+    if getent passwd ${USER_ID} > /dev/null 2>&1; then \
+        EXISTING_USER="$(getent passwd ${USER_ID} | cut -d: -f1)"; \
+        usermod -l mcpuser "${EXISTING_USER}" || true; \
+        usermod -d /home/mcpuser -m mcpuser || true; \
+        usermod -g "${EXISTING_GROUP}" mcpuser || true; \
+        usermod -s /bin/bash mcpuser || true; \
+    else \
+        useradd -u ${USER_ID} -g "${EXISTING_GROUP}" -m -s /bin/bash mcpuser; \
+    fi
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/conda /opt/conda
@@ -83,7 +92,7 @@ ENV LD_LIBRARY_PATH="/opt/conda/lib:${LD_LIBRARY_PATH:-}"
 
 RUN mkdir -p /home/mcpuser/colabfit/models /home/mcpuser/colabfit/datasets \
     /home/mcpuser/colabfit/inference_output /home/mcpuser/colabfit/test_driver_output && \
-    chown -R mcpuser:mcpuser /home/mcpuser && \
+    chown -R ${USER_ID}:${GROUP_ID} /home/mcpuser && \
     chmod 755 /home/mcpuser
 
 USER mcpuser
