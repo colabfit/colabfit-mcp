@@ -23,6 +23,9 @@ if [ "$OS" = "Darwin" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f $SCRIPT_DIR/compose.cpu.yaml"
 elif command -v nvidia-smi &>/dev/null && nvidia-smi -L &>/dev/null; then
     COMPOSE_FILES="$COMPOSE_FILES -f $SCRIPT_DIR/compose.nvidia.yaml"
+else
+    # linux without NVIDIA GPU
+    COMPOSE_FILES="$COMPOSE_FILES -f $SCRIPT_DIR/compose.cpu.yaml"
 fi
 
 exec docker compose $COMPOSE_FILES --project-directory "$SCRIPT_DIR" "$@"
