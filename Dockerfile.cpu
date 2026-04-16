@@ -1,15 +1,22 @@
 # syntax=docker/dockerfile:1.6
 
-FROM ubuntu:24.04 AS builder
+FROM ubuntu:22.04 AS builder
 
 ARG TARGETARCH=amd64
 ARG PYG_WHEEL_INDEX=https://data.pyg.org/whl/torch-2.8.0+cpu.html
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.kernel.org/ubuntu|g' /etc/apt/sources.list
+
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates build-essential wget git cmake units \
+    ca-certificates build-essential wget git cmake units gnupg && \
+    wget -qO - "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF23C5A6CF475977595C89F51BA6932366A755776" | \
+        gpg --dearmor -o /etc/apt/trusted.gpg.d/deadsnakes.gpg && \
+    echo "deb https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu jammy main" \
+        > /etc/apt/sources.list.d/deadsnakes.list && \
+    apt-get update && apt-get install -y --no-install-recommends \
     python3.12 python3.12-dev python3.12-venv && \
     rm -rf /var/lib/apt/lists/*
 
@@ -55,9 +62,11 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install '.[full]'
 
 # ---
 
-FROM ubuntu:24.04
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.kernel.org/ubuntu|g' /etc/apt/sources.list
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \

@@ -1,4 +1,4 @@
-.PHONY: help setup build start stop restart logs clean test
+.PHONY: help setup build buildcpu start stop restart logs clean test
 
 # Load environment variables from .env if it exists
 -include .env
@@ -60,6 +60,16 @@ build:
 	@echo "Building Docker images with USER_ID=${USER_ID} GROUP_ID=${GROUP_ID}..."
 	USER_ID=${USER_ID} GROUP_ID=${GROUP_ID} ./start.sh build
 	@echo "✓ Build complete"
+
+# Dev-only: force CPU image build regardless of GPU availability
+buildcpu:
+	@echo "Building CPU Docker image (forced, dev use)..."
+	USER_ID=${USER_ID} GROUP_ID=${GROUP_ID} docker compose \
+		-f compose.yaml \
+		-f compose.cpu.yaml \
+		--project-directory "$(CURDIR)" \
+		build
+	@echo "✓ CPU build complete"
 
 start: setup
 	@echo "Starting ColabFit MCP services..."

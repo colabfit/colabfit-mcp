@@ -18,12 +18,13 @@ from colabfit_mcp.helpers.training import (
     write_mace_yaml,
 )
 from colabfit_mcp.helpers.kliff_utils import analyze_configs, fix_species_types
-from colabfit_mcp.tools.dataset_resolver import resolve_dataset
+from colabfit_mcp.tools.dataset_resolver import resolve_dataset, resolve_dataset_by_name
 
 
 def train_mace(
     train_file: str | None = None,
     model_name: str | None = None,
+    dataset_name: str | None = None,
     r_max: float = 5.0,
     max_num_epochs: int = 100,
     batch_size: int | None = None,
@@ -34,59 +35,71 @@ def train_mace(
 ) -> dict:
     """Train a MACE-style KLAY model using KLIFF on XYZ data.
 
-    When train_file is omitted, automatically discovers suitable datasets
-    in the local download directory. If a matching dataset is found, it is
-    loaded directly from the HuggingFace arrow cache. If no match or only a
-    partial match is found, returns guidance to search and download from ColabFit.
-
     IMPORTANT: All file paths are inside the Docker container filesystem.
     Datasets are under /home/mcpuser/colabfit/datasets/.
     Trained models are saved under /home/mcpuser/colabfit/models/.
 
-    Architecture notes:
-        The model is a KLAY graph network with MACE-style equivariant convolutions
-        built by klay.builder.build_model from a dict config. The exact config is
-        written to <model_dir>/mace_model.yaml for reproducibility.
+    ## DATASET SELECTION — use exactly one of: dataset_name, train_file, or elements
 
-        n_layers sets the number of MACE conv layers in the *model*. The graph
-        transform (RadialGraph) always uses n_layers=1 (single-hop), so all conv
-        layers share the same edge_index0. This is correct for MACE — do not
-        confuse model n_layers with RadialGraph n_layers.
+    Priority order: train_file > dataset_name > elements/auto-discovery.
 
-        The model is exported via KLIFF's save_kim_model(), which uses
-        torch.jit.script with an e3nn.util.jit fallback to handle e3nn layers
-        (e.g. OneHotAtomEncoding). The result is a portable TorchScript model.pt
-        compatible with the KIM TorchML driver.
+    dataset_name (PREFERRED when you have a specific dataset):
+        Exact folder name of a locally downloaded dataset, as returned by
+        download_dataset (e.g. dataset_name="mlearn_Ni_test"). Performs a
+        direct lookup — no scoring, no ranking, no risk of selecting a
+        different dataset. ALWAYS use this when you just called download_dataset
+        or when you know which local dataset you want.
+
+    train_file (for local extxyz files):
+        Container path to an extxyz file (e.g. from build_dataset). Use for
+        datasets not downloaded via download_dataset. Takes precedence over
+        dataset_name if both are provided.
+
+    elements (for auto-discovery only):
+        ONLY used when NEITHER dataset_name NOR train_file is provided.
+        Filters auto-discovery to local datasets containing these elements.
+        May select a different dataset than intended if multiple local datasets
+        contain the same elements — use dataset_name to avoid ambiguity.
+
+    If none of the three are given, auto-discovers any suitable local dataset.
+
+    ## Architecture notes
+
+    The model is a KLAY graph network with MACE-style equivariant convolutions
+    built by klay.builder.build_model from a dict config. The exact config is
+    written to <model_dir>/mace_model.yaml for reproducibility.
+
+    n_layers sets the number of MACE conv layers in the *model*. The graph
+    transform (RadialGraph) always uses n_layers=1 (single-hop), so all conv
+    layers share the same edge_index0. This is correct for MACE — do not
+    confuse model n_layers with RadialGraph n_layers.
+
+    The model is exported via KLIFF's save_kim_model(), which uses
+    torch.jit.script with an e3nn.util.jit fallback to handle e3nn layers
+    (e.g. OneHotAtomEncoding). The result is a portable TorchScript model.pt
+    compatible with the KIM TorchML driver.
 
     Args:
-        train_file: Path to an existing extxyz file inside the container to use
-            as training data. If None, auto-discovers from local downloaded datasets.
+        train_file: Container path to an extxyz training file. Takes precedence
+            over dataset_name. Use for custom datasets not from download_dataset.
+        dataset_name: Exact local folder name returned by download_dataset
+            (e.g. "mlearn_Ni_test"). Direct lookup — bypasses all discovery.
+            Use this whenever you have a specific downloaded dataset to train on.
         model_name: Name for the trained model. If None, auto-generated from
-            dataset name (dataset provenance) or elements.
-        r_max: Cutoff radius in Angstroms (default 5.0). Typical: 4-6 Å. Start
-            with ~1.5x the nearest-neighbor distance. Larger = more context,
-            higher cost.
-        max_num_epochs: Maximum training epochs (default 100). Use 100-300 for
-            scratch training; 50-100 for fine-tuning.
-        batch_size: Configurations per gradient step (default 4). Reduce to 1-2
-            for GPU OOM errors.
+            dataset name or elements.
+        r_max: Cutoff radius in Angstroms (default 5.0). Typical: 4-6 Å.
+        max_num_epochs: Maximum training epochs (default 100).
+        batch_size: Configurations per gradient step (default 4).
         device: "cuda", "mps", or "cpu" (auto-detected if None).
-        elements: Chemical elements for dataset matching when
-            train_file is not provided (e.g. ["Si", "O"]).
-        n_layers: Number of MACE interaction layers (default 2). 2 is adequate
-            for most systems; use 3 for complex multi-element or high-accuracy
-            targets. Each additional layer increases cost significantly.
-        avg_num_neighbors: Expected number of neighbors within r_max. If None,
-            auto-estimated by sampling up to 20 configs from the training dataset
-            using RadialGraph — no need to supply this manually. Override only
-            if the estimate is known to be wrong (e.g., very small test dataset).
-            Typical values: 10-40 for solid-state, 5-15 for molecular systems.
+        elements: Element filter for auto-discovery when dataset_name and
+            train_file are both None (e.g. ["Si", "O"]).
+        n_layers: Number of MACE interaction layers (default 2).
+        avg_num_neighbors: Expected neighbors within r_max. Auto-estimated if None.
 
     IMPORTANT — TELL THE USER THE LOG PATH AFTER CALLING THIS TOOL:
-        Training can take minutes to hours. The actual log file path is returned
-        in the 'training_log' key of the result. Always report this exact path
-        to the user immediately after the tool call so they can follow progress
-        with `tail -f <path>` while training runs.
+        Training can take minutes to hours. Always report the 'training_log'
+        path from the result so the user can follow progress with
+        `tail -f <path>` while training runs.
 
     Returns:
         Dict with keys:
@@ -119,14 +132,24 @@ def train_mace(
         training_log_name,
     )
 
-    if train_file is None:
+    if train_file is not None:
+        dataset_info = None
+        dataset_safe_name = None
+    elif dataset_name is not None:
+        dataset_info, info = resolve_dataset_by_name(dataset_name)
+        if dataset_info is None:
+            if info.get("success") and info.get("train_file"):
+                train_file = info["train_file"]
+                dataset_safe_name = None
+            else:
+                return info
+        else:
+            dataset_safe_name = dataset_info["safe_name"]
+    else:
         dataset_info, info = resolve_dataset(elements=elements)
         if dataset_info is None:
             return info
         dataset_safe_name = dataset_info["safe_name"]
-    else:
-        dataset_info = None
-        dataset_safe_name = None
 
     run_ts = make_timestamp()
     stem = make_model_stem(model_name, dataset_safe_name, elements)

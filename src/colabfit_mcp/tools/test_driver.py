@@ -28,15 +28,13 @@ def list_test_drivers(property_keyword: str | None = None) -> dict:
         Dict with test_drivers, valid_crystal_structures, crystal_structure_info,
         crystal_structure_examples, ase_molecule_names, workflow guidance.
     """
-    drivers = [
-        {"name": name, **meta} for name, meta in _KIMVV_TEST_DRIVERS.items()
-    ]
+    drivers = [{"name": name, **meta} for name, meta in _KIMVV_TEST_DRIVERS.items()]
     if property_keyword:
         kw = property_keyword.lower()
         drivers = [
-            d for d in drivers
-            if kw in d["name"].lower() or kw in d["description"].lower()
-            or any(kw in p for p in d["properties"])
+            d
+            for d in drivers
+            if kw in d["name"].lower() or kw in d["description"].lower() or any(kw in p for p in d["properties"])
         ]
     return {
         "success": True,
@@ -124,20 +122,21 @@ def run_test_driver(
         return {"success": False, "error": "Provide either formula or structures."}
 
     if structures is None:
-        structures = [{"formula": formula, "crystal_structure": crystal_structure,
-                       "lattice_constant": lattice_constant}]
+        structures = [
+            {"formula": formula, "crystal_structure": crystal_structure, "lattice_constant": lattice_constant}
+        ]
 
     if test_driver_name not in _KIMVV_TEST_DRIVERS:
         return {
             "success": False,
             "error": (
-                f"Unknown test driver {test_driver_name!r}. "
-                f"Valid options: {list(_KIMVV_TEST_DRIVERS.keys())}"
+                f"Unknown test driver {test_driver_name!r}. Valid options: {list(_KIMVV_TEST_DRIVERS.keys())}"
             ),
         }
 
     if async_mode:
         from colabfit_mcp.helpers.driver_worker import launch_driver_background
+
         return launch_driver_background(
             model_path=model_path,
             test_driver_name=test_driver_name,
@@ -165,6 +164,7 @@ def run_test_driver(
     if device is None:
         try:
             from colabfit_mcp.helpers.device import detect_device
+
             device, _ = detect_device()
         except Exception:
             device = "cpu"
@@ -184,14 +184,22 @@ def run_test_driver(
         return {"success": False, "error": f"Failed to load model: {e}"}
 
     result = _execute_driver(
-        structures, formula, crystal_structure, lattice_constant,
-        input_file, params, calc, test_driver_name, is_cluster,
+        structures,
+        formula,
+        crystal_structure,
+        lattice_constant,
+        input_file,
+        params,
+        calc,
+        test_driver_name,
+        is_cluster,
     )
     if not result["success"]:
         return result
     atoms_list, results_list = result["atoms_list"], result["results_list"]
 
     from colabfit_mcp.helpers.naming import make_timestamp, extract_model_id, test_driver_dir_name
+
     ts = make_timestamp()
     model_id = extract_model_id(model_dir)
     out_dir = TEST_DRIVER_DIR / test_driver_dir_name(model_id, test_driver_name, ts)
@@ -206,9 +214,20 @@ def run_test_driver(
     json_path = out_dir / "results.json"
     try:
         with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump({"metadata": {"model_name": model_id, "test_driver": test_driver_name,
-                        "timestamp": ts, "n_structures": len(structures)},
-                       "results": results_list}, fh, indent=2, default=str)
+            json.dump(
+                {
+                    "metadata": {
+                        "model_name": model_id,
+                        "test_driver": test_driver_name,
+                        "timestamp": ts,
+                        "n_structures": len(structures),
+                    },
+                    "results": results_list,
+                },
+                fh,
+                indent=2,
+                default=str,
+            )
     except Exception as e:
         return {"success": False, "error": f"Driver ran but failed to save results: {e}"}
 

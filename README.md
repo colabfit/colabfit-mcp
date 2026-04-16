@@ -424,6 +424,20 @@ See [Prerequisites](#prerequisites) for the full list. In short: Docker + Compos
 
 ## Troubleshooting
 
+**`torch_scatter` fails to install with "torch not found"**: When installing into an existing
+Python environment (e.g. a KDP container or a system Python), pip's build isolation prevents
+the build from seeing an already-installed `torch`. Use `--no-build-isolation`:
+
+```bash
+python -m pip install --no-build-isolation torch-scatter
+```
+
+Then reinstall the package to pick up the newly available extension:
+
+```bash
+pip install -e ".[full]"
+```
+
 **GPU not detected in container**: Ensure `nvidia-container-toolkit` is
 installed and the Docker daemon has been restarted. Verify with
 `docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi`.
