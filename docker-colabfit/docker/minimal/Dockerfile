@@ -10,16 +10,6 @@ ARG PACKAGE_DIR=/pipeline/packages/
 # set working directory to /pipeline/packages
 WORKDIR ${PACKAGE_DIR}/colabfit-mcp
 
-# install libraries for downloading dataset
-RUN python -m pip install --no-cache-dir git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit
-RUN python -m pip install --no-cache-dir datasets>=2.0
-
-# install openai-agent library 
-RUN python -m pip install --no-cache-dir openai-agents
-
-# install the ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
-RUN python -m pip install --no-cache-dir -e .
-
 
 # add installation path of colabfit-mcp executable to $PATH
 ENV PATH="/home/openkim/.local/bin:${PATH}"
@@ -31,6 +21,17 @@ ENV PATH="/home/openkim/.local/bin:${PATH}"
     # this is not necessarily a bad thing. 
         # it helps keep separate KDP's pip libraries and colabfit's pip libraries. 
         # as long as python3 is able to find both directories, which it can as of now
+
+        
+# install libraries for downloading dataset
+RUN python -m pip install --no-cache-dir git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit
+RUN python -m pip install --no-cache-dir "datasets>=2.0"
+
+# install openai-agent library. This probably doesnt belong here. This is client-side code. Not server code. 
+RUN python -m pip install --no-cache-dir openai-agents
+
+# install the ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
+RUN python -m pip install --no-cache-dir -e .
 
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
