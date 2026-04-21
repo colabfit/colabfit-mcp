@@ -12,10 +12,10 @@ authors = [{name = "ColabFit"}]
 requires-python = ">= 3.10"
 dependencies = [
     "mcp[cli]>=1.0.0",
-    "requests",
+    "requests==2.33.1",
     "numpy==2.0.0",
-    "pyarrow",
-    "ase",
+    "pyarrow==24.0.0",
+    "ase==3.25.0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -35,15 +35,14 @@ full = [
     "klay @ git+https://github.com/gpwolfe/klay.git@colabfit_mcp_edits",
     "kliff @ git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit",
     "pytorch-lightning>=2.0",
-    "torch_geometric",
-    "torch_scatter",
-    "torch_ema",
-    "kimpy",
-    "ase",
+    "torch_geometric==2.6.1",
+    "torch_scatter==2.1.2+pt28cu128",
+    "torch_ema==0.3",
+    "kimpy==2.1.4",
     "datasets>=2.0",
-    "huggingface_hub",
-    "kim-tools",
-    "kimvv",
+    "huggingface_hub==1.11.0",
+    "kim-tools==0.4.9",
+    "kimvv==0.1.10",
 ]
 
 [tool.setuptools.packages.find]
