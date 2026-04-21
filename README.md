@@ -35,10 +35,9 @@ make setup
 
 # Build Docker images with your user ID for proper permissions
 make build
-
-# Start with GPU detection (CUDA → CPU fallback)
-make start
 ```
+
+Then register the MCP server with your client (see [Register the MCP server](#register-the-mcp-server) below) and restart your client. The container starts automatically when your AI client connects.
 
 Run `make help` to see all available commands.
 
@@ -300,7 +299,7 @@ Training writes log files inside the model's KIM subdirectory:
 
 ## GPU Support
 
-`make start` automatically detects your GPU via `start.sh`:
+`start.sh` automatically detects your GPU:
 
 - **NVIDIA GPU present**: starts with `compose.nvidia.yaml` overlay, enabling CUDA passthrough via nvidia-container-toolkit
 - **No NVIDIA GPU**: starts without the overlay; the container selects the best available device (MPS or CPU) automatically at runtime

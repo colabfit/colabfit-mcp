@@ -13,7 +13,7 @@ requires-python = ">= 3.10"
 dependencies = [
     "mcp[cli]>=1.0.0",
     "requests",
-    "numpy",
+    "numpy==2.0.0",
     "pyarrow",
     "ase",
 ]
