@@ -15,14 +15,14 @@ USER openkim
 
 # add installation path of colabfit-mcp executable to $PATH
 ENV PATH="/home/openkim/.local/bin:${PATH}"
-    # kliff and datasets library are installed in /home/openkim/.local/lib/python3.10/site-packages 
-    # whereas the KDP's pip libraries (kimpy, kim_tools) are in /usr/local/lib/python3.10/dist-packages/
-        # how did KDP pip install in the root directory? 
-    # do we want kliff and datasets in the same directory as the other pip libraries? 
-        # how do we safely achieve that?
-    # this is not necessarily a bad thing. 
-        # it helps keep separate KDP's pip libraries and colabfit's pip libraries. 
-        # as long as python3 is able to find both directories, which it can as of now
+# kliff and datasets library are installed in /home/openkim/.local/lib/python3.10/site-packages 
+# whereas the KDP's pip libraries (kimpy, kim_tools) are in /usr/local/lib/python3.10/dist-packages/
+# how did KDP pip install in the root directory? 
+# do we want kliff and datasets in the same directory as the other pip libraries? 
+# how do we safely achieve that?
+# this is not necessarily a bad thing. 
+# it helps keep separate KDP's pip libraries and colabfit's pip libraries. 
+# as long as python3 is able to find both directories, which it can as of now
 
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
@@ -35,28 +35,20 @@ RUN python -m pip install --user --no-cache-dir --upgrade \
     wheel \
     build
 
-
-
 # colabfit-mcp repo url
 ARG REPO_URL=https://github.com/colabfit/colabfit-mcp.git
-ARG REPO_REF=main
+ARG REPO_REF=kdp_minimal_base
 
 # use KDP packages directory
 ARG PACKAGE_DIR=/pipeline/packages/ 
 
-# Clone repo into container
-RUN git clone --depth 1 --branch ${REPO_REF} ${REPO_URL} ${PACKAGE_DIR}/colabfit-mcp
-
-# set working directory to /pipeline/packages
-WORKDIR ${PACKAGE_DIR}/colabfit-mcp
-
 
 # install openai-agent library. This probably doesnt belong here. This is client-side code. Not server code. 
-RUN python -m pip install --no-cache-dir openai-agents
+# RUN python -m pip install --no-cache-dir openai-agents
 
 # CPU torch
-RUN python -m pip install --user --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cpu
+# RUN python -m pip install --user --no-cache-dir \
+#     torch --index-url https://download.pytorch.org/whl/cpu
 
 # PyG wheels matched to torch 2.8.0 CPU
 RUN python -m pip install --user --no-cache-dir \
@@ -73,28 +65,10 @@ RUN python -m pip install --user --no-cache-dir \
     torch_ema==0.3.0 \
     klay
 
-
-# install [basic] packages listed in ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
-RUN python -m pip install --no-cache-dir "mcp[cli]>=1.0.0"
-RUN python -m pip install --no-cache-dir "requests"
-RUN python -m pip install --no-cache-dir "numpy"
-RUN python -m pip install --no-cache-dir "pyarrow"
-RUN python -m pip install --no-cache-dir "ase"
-
-
-# install [full] packages listed in ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
-RUN python -m pip install --no-cache-dir "klay @ git+https://github.com/gpwolfe/klay.git@colabfit_mcp_edits"
-RUN python -m pip install --no-cache-dir "kliff @ git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit"
-RUN python -m pip install --no-cache-dir "pytorch-lightning>=2.0"
-RUN python -m pip install --no-cache-dir "torch_geometric"
-RUN python -m pip install --no-cache-dir "torch_scatter"
-RUN python -m pip install --no-cache-dir "torch_ema"
-RUN python -m pip install --no-cache-dir "kimpy"
-RUN python -m pip install --no-cache-dir "ase"
-RUN python -m pip install --no-cache-dir "datasets>=2.0"
-RUN python -m pip install --no-cache-dir "huggingface_hub"
-RUN python -m pip install --no-cache-dir "kim-tools"
-RUN python -m pip install --no-cache-dir "kimvv"
+# Install colabfit-mcp and dependencies from repo
+RUN pip install --user --no-cache-dir "colabfit_mcp[full] @ git+${REPO_URL}@${REPO_REF}"
+# set working directory to /pipeline/packages
+WORKDIR ${PACKAGE_DIR}/colabfit-mcp
 
 
 WORKDIR /home/openkim
