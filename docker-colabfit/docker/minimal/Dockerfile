@@ -22,7 +22,7 @@ ENV PATH="/home/openkim/.local/bin:${PATH}"
         # it helps keep separate KDP's pip libraries and colabfit's pip libraries. 
         # as long as python3 is able to find both directories, which it can as of now
 
-        
+
 # install libraries for downloading dataset
 RUN python -m pip install --no-cache-dir git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit
 RUN python -m pip install --no-cache-dir "datasets>=2.0"
@@ -30,8 +30,12 @@ RUN python -m pip install --no-cache-dir "datasets>=2.0"
 # install openai-agent library. This probably doesnt belong here. This is client-side code. Not server code. 
 RUN python -m pip install --no-cache-dir openai-agents
 
-# install the ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
-RUN python -m pip install --no-cache-dir -e .
+# install packages listed in ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
+RUN python -m pip install --no-cache-dir "mcp[cli]>=1.0.0"
+RUN python -m pip install --no-cache-dir "requests"
+RUN python -m pip install --no-cache-dir "numpy"
+RUN python -m pip install --no-cache-dir "pyarrow"
+RUN python -m pip install --no-cache-dir "ase"
 
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
