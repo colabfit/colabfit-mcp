@@ -15,7 +15,7 @@ def create_structure(
     for running calculations, or used to verify supercell size before training.
 
     IMPORTANT: All paths are inside the Docker container filesystem.
-    Inference output is at /home/mcpuser/colabfit/inference_output/.
+    Inference output is at /home/openkim/colabfit/inference_output/.
 
     Args:
         formula: Chemical formula (e.g. "Si", "Fe", "NaCl").

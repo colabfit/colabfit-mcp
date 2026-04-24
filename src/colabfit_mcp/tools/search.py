@@ -22,7 +22,7 @@ def search_datasets(
     ## DISCOVERY PROTOCOL — ALWAYS FOLLOW THIS ORDER
 
     1. Call check_local_datasets first to find already-downloaded datasets in the
-       Docker container (/home/mcpuser/colabfit/datasets/). If a suitable match
+       Docker container (/home/openkim/colabfit/datasets/). If a suitable match
        exists locally, skip steps 2-3 and proceed directly to train_mace.
     2. If no local match, call this tool to search ColabFit.org. ColabFit is the
        authoritative source — do NOT search the internet or guess dataset names.

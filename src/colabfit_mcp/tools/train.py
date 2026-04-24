@@ -36,8 +36,8 @@ def train_mace(
     """Train a MACE-style KLAY model using KLIFF on XYZ data.
 
     IMPORTANT: All file paths are inside the Docker container filesystem.
-    Datasets are under /home/mcpuser/colabfit/datasets/.
-    Trained models are saved under /home/mcpuser/colabfit/models/.
+    Datasets are under /home/openkim/colabfit/datasets/.
+    Trained models are saved under /home/openkim/colabfit/models/.
 
     ## DATASET SELECTION — use exactly one of: dataset_name, train_file, or elements
 
@@ -169,6 +169,8 @@ def train_mace(
     logger.info(f"=== Training: {model_dir_basename} ===")
 
     if train_file is None:
+        from colabfit_mcp.helpers.hf_dataset import ENERGY_KEY, FORCES_KEY
+
         logger.info(
             f"Loading dataset from local cache"
             f" (source: ColabFit/HuggingFace — {dataset_info['hf_id']})"
@@ -177,7 +179,8 @@ def train_mace(
             kliff_dataset = Dataset.from_huggingface(
                 dataset_info["hf_id"],
                 split=dataset_info["split"],
-                forces_key="atomic_forces",
+                energy_key=ENERGY_KEY,
+                forces_key=FORCES_KEY,
                 cache_dir=dataset_info["hf_cache_dir"],
             )
         except Exception as e:

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from colabfit_mcp.config import DOWNLOAD_DIR
-from colabfit_mcp.helpers.kliff_utils import analyze_configs
+from colabfit_mcp.helpers.hf_dataset import analyze_hf_dataset, download_from_huggingface
 
 _ALLOWED_CACHE_EXTENSIONS = {".arrow", ".parquet", ".json"}
 
@@ -39,26 +39,19 @@ def download_dataset(
     split: str = "train",
     n_configs: int | None = None,
 ) -> dict:
-    """Download a ColabFit dataset from HuggingFace using KLIFF Dataset.from_huggingface.
+    """Download a ColabFit dataset from HuggingFace.
 
-    Uses KLIFF's Dataset.from_huggingface which calls datasets.load_dataset
-    internally and builds KLIFF Configuration objects directly. No intermediate
-    extxyz file is written — data lives in the HuggingFace arrow cache and in
-    a metadata JSON that train_mace uses to reload without re-downloading.
-
-    HuggingFace column defaults (from KLIFF): positions, atomic_numbers, pbc,
-    cell, energy, atomic_forces. These match the standard ColabFit HF schema.
+    Data lives in the HuggingFace arrow cache and in a metadata JSON that
+    train_mace uses to reload the dataset without re-downloading.
 
     ## IMPORTANT: n_configs does NOT reduce dataset size
 
-    n_configs limits how many configurations KLIFF builds into Configuration
-    objects during the initial load call. It does NOT download fewer data from
-    HuggingFace — the full dataset parquet/arrow files are always cached locally.
-    It does NOT produce a smaller dataset suitable for training; a model trained
-    with n_configs=150 on a 50,000-config dataset is trained on only 150 configs,
-    which will likely underfit severely.
+    n_configs truncates how many rows are loaded into memory for analysis.
+    It does NOT reduce the on-disk HF arrow cache — the full dataset is always
+    cached. A model trained with n_configs=150 on a 50,000-config dataset is
+    trained on only 150 configs, which will likely underfit severely.
 
-    To find datasets that actually contain ~100–200 configurations, use the
+    To find datasets that actually contain ~100-200 configurations, use the
     max_configurations parameter in search_datasets BEFORE downloading.
 
     dataset_name: ColabFit dataset name as returned by search_datasets.
@@ -67,10 +60,8 @@ def download_dataset(
         traceability; used for cache-hit detection.
     split: HuggingFace dataset split. Nearly all ColabFit datasets only have
         'train' — using 'test' or 'validation' will raise an error.
-    n_configs: Limits how many configurations KLIFF loads into memory. Does NOT
-        limit what is downloaded or cached. Use only for quick inspection of
-        dataset structure, NOT for creating training subsets. To find genuinely
-        small datasets, use max_configurations in search_datasets instead.
+    n_configs: Truncates in-memory rows for analysis only. Does NOT limit the
+        on-disk cache. Use max_configurations in search_datasets instead.
 
     HuggingFace arrow cache: DOWNLOAD_DIR/.hf_cache/
     Metadata JSON:           DOWNLOAD_DIR/<safe_name>/dataset.json
@@ -104,17 +95,14 @@ def download_dataset(
     hf_cache_dir = str(DOWNLOAD_DIR / ".hf_cache")
 
     try:
-        from kliff.dataset import Dataset
-    except ImportError as e:
-        return {"success": False, "error": f"Missing dependency: {e}. Install with pip install '.[full]'."}
-
-    try:
-        dataset = Dataset.from_huggingface(
+        ds = download_from_huggingface(
             hf_id,
             split=split,
             n_configs=n_configs,
             cache_dir=hf_cache_dir,
         )
+    except ImportError as e:
+        return {"success": False, "error": f"Missing dependency: {e}. Install with pip install datasets."}
     except Exception as e:
         return {"success": False, "error": str(e), "hf_id_tried": hf_id}
 
@@ -122,7 +110,7 @@ def download_dataset(
     if cache_error:
         return {"success": False, "error": cache_error, "hf_id_tried": hf_id}
 
-    analysis = analyze_configs(dataset.configs)
+    analysis = analyze_hf_dataset(ds)
     metadata = {
         "hf_id": hf_id,
         "split": split,

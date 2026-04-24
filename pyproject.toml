@@ -13,11 +13,11 @@ requires-python = ">= 3.10"
 # remove version pinning here
 dependencies = [
     "mcp[cli]>=1.0.0",
-    "requests==2.33.1",
-    "numpy==2.0.0",
-    "pyarrow==24.0.0",
-    "ase==3.25.0",
-    "kliff @ git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit",
+    "requests>=2.32.0",
+    "numpy>=2.0.0",
+    "pyarrow>=16.0.0",
+    "ase>=3.22.0",
+    "datasets>=3.0.0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -36,11 +36,12 @@ keywords = [
 # if yes, then do not pin to specific versions
 [project.optional-dependencies]
 full = [
+    "kliff @ git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit",
     "klay @ git+https://github.com/gpwolfe/klay.git@colabfit_mcp_edits",
     "pytorch-lightning>=2.0",
     "torch_geometric==2.6.1",
     "torch_scatter==2.1.2+pt28cu128",
-    "torch_ema==0.3",
+    "torch_ema>=0.3",
     "kimpy==2.1.4",
     "kim-tools==0.4.9",
     "kimvv==0.1.10",
