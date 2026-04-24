@@ -23,20 +23,20 @@ ENV PATH="/home/openkim/.local/bin:${PATH}"
         # as long as python3 is able to find both directories, which it can as of now
 
 
-# install libraries for downloading dataset
-RUN python -m pip install --no-cache-dir git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit
-RUN python -m pip install --no-cache-dir "datasets>=2.0"
-
 # install openai-agent library. This probably doesnt belong here. This is client-side code. Not server code. 
-RUN python -m pip install --no-cache-dir openai-agents
+# RUN python -m pip install --no-cache-dir openai-agents
 
 # install packages listed in ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
 RUN python -m pip install --no-cache-dir "mcp[cli]>=1.0.0"
-RUN python -m pip install --no-cache-dir "requests"
-RUN python -m pip install --no-cache-dir "numpy"
-RUN python -m pip install --no-cache-dir "pyarrow"
-RUN python -m pip install --no-cache-dir "ase"
+RUN python -m pip install --no-cache-dir "requests==2.33.1"
+RUN python -m pip install --no-cache-dir "numpy==2.0.0"
+RUN python -m pip install --no-cache-dir "pyarrow==24.0.0"
+RUN python -m pip install --no-cache-dir "ase==3.25.0"
+RUN python -m pip install --no-cache-dir "datasets>=2.0"
+RUN python -m pip install --no-cache-dir "kliff @ git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit"
 
+# install colabfit-mcp source code
+RUN pip install --user --no-cache-dir .
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python3 -c "import colabfit_mcp; print('ok')" || exit 1
