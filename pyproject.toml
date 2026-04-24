@@ -10,6 +10,7 @@ license = {file = "LICENSE"}
 readme = "README.md"
 authors = [{name = "ColabFit"}]
 requires-python = ">= 3.10"
+# remove version pinning here
 dependencies = [
     "mcp[cli]>=1.0.0",
     "requests==2.33.1",
@@ -31,6 +32,8 @@ keywords = [
     "materials science",
 ]
 
+# do we need [full] installation via pip if [full] is not published on PyPI? 
+# if yes, then do not pin to specific versions
 [project.optional-dependencies]
 full = [
     "klay @ git+https://github.com/gpwolfe/klay.git@colabfit_mcp_edits",
