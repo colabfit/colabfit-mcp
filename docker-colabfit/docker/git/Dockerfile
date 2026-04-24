@@ -3,7 +3,8 @@ FROM colabfit-sys:latest
 
 # colabfit-mcp repo url
 ARG REPO_URL=https://github.com/colabfit/colabfit-mcp.git
-ARG REPO_REF=main
+# USE main BRANCH WHEN READY FOR MERGE
+ARG REPO_REF=kdp_minimal_base
 
 # use KDP packages directory
 ARG PACKAGE_DIR=/pipeline/packages/ 
