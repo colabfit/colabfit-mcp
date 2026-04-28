@@ -1,0 +1,6 @@
+mcp[cli]==1.27.0
+requests==2.33.1
+numpy==2.0.0
+pyarrow==24.0.0
+ase==3.25.0
+datasets==2.0.0

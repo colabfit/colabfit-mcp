@@ -27,16 +27,13 @@ ENV PATH="/home/openkim/.local/bin:${PATH}"
 # RUN python -m pip install --no-cache-dir openai-agents
 
 # install packages listed in ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
-RUN python -m pip install --no-cache-dir "mcp[cli]>=1.0.0"
-RUN python -m pip install --no-cache-dir "requests==2.33.1"
-RUN python -m pip install --no-cache-dir "numpy==2.0.0"
-RUN python -m pip install --no-cache-dir "pyarrow==24.0.0"
-RUN python -m pip install --no-cache-dir "ase==3.25.0"
-RUN python -m pip install --no-cache-dir "datasets>=2.0"
+# constraints file ensures package versions remain consistent
+COPY constraints.txt .
+RUN python -m pip install --no-cache-dir -r constraints.txt
 RUN python -m pip install --no-cache-dir "kliff @ git+https://github.com/gpwolfe/kliff.git@colabfit_mcp_edit"
 
 # install colabfit-mcp source code
-RUN pip install --user --no-cache-dir .
+RUN python -m pip install --user --no-cache-dir --no-deps .
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python3 -c "import colabfit_mcp; print('ok')" || exit 1
