@@ -1,4 +1,3 @@
-docker build -t colabfit-sys docker/sys;
-docker build -t colabfit-git docker/git;
-docker build -t colabfit-minimal docker/minimal;
-docker build -t colabfit-torchml docker/torchml;
+docker build   -f /home/nmohan/UMN/colabfit-mcp/docker-colabfit/docker/minimal/Dockerfile   -t colabfit-minimal   /home/nmohan/UMN/colabfit-mcp;
+docker build   -f /home/nmohan/UMN/colabfit-mcp/docker-colabfit/docker/torchml/Dockerfile   -t colabfit-torchml   /home/nmohan/UMN/colabfit-mcp;
+#docker build -t colabfit-torchml docker/torchml;
