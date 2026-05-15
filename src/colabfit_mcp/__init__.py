@@ -56,4 +56,5 @@ except ImportError as e:
 
 
 def main():
-    mcp.run(transport="stdio")
+    mcp.settings.host = "0.0.0.0"
+    mcp.run(transport="streamable-http")
