@@ -13,7 +13,8 @@
       "identifier": "colabfit-mcp",
       "version": "0.1.0",
       "transport": {
-        "type": "stdio"
+        "type": "streamable-http",
+        "url": "http://127.0.0.1:8000/mcp"
       }
     }
   ]
