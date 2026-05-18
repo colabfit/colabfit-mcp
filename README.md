@@ -8,6 +8,7 @@ This is a **Model Context Protocol (MCP) server** that gives AI assistants the a
 - Search and download scientific datasets from [ColabFit](https://materials.colabfit.org)
 - Train MACE interatomic potentials on your local hardware (GPU or CPU)
 - Run energy/forces calculations and validate models with OpenKIM test drivers
+- Coordinate multi-step pipelines as a single LangGraph workflow (the LLM emits one graph spec; the server runs it to completion with checkpointing and resume)
 
 It bridges conversational AI and local compute — the AI agent searches for data, trains
 models, and runs simulations on your machine through this server.
@@ -180,6 +181,13 @@ Install the client library with `pip install mcp`. The server uses JSON-RPC 2.0 
 | `list_test_drivers` | List available kimvv test drivers, optionally filtered by property keyword |
 | `run_test_driver` | Run a kimvv test driver against a trained KLAY model; saves `structures.extxyz` + `results.json` in a timestamped subdirectory; supports multiple structures per call with optional `repeat` for supercell sizing and `async_mode` for slow drivers |
 | `check_test_driver_result` | Check status of an async test driver job and return inline results when complete |
+| `compile_workflow` | Validate a graph spec (dry-run) and report node count, long-running steps, and any errors |
+| `run_workflow` | Compile and execute a LangGraph workflow spec server-side; returns final state and a `workflow_id` |
+| `resume_workflow` | Resume a previously-interrupted workflow by `workflow_id`, optionally patching state |
+| `get_workflow_status` | Fetch the checkpointed state and pending-next nodes for a `workflow_id` |
+| `list_workflow_nodes` | Catalog of node types and router predicates available for graph specs |
+| `list_workflow_templates` | List bundled spec templates (search→train, local-first, eval, inference sweep, custom-build→train) |
+| `get_workflow_template` | Fetch one template's full spec, ready to customize and pass to `run_workflow` |
 
 ### Available Test Drivers (kimvv)
 
@@ -199,6 +207,30 @@ Install the client library with `pip install mcp`. The server uses JSON-RPC 2.0 
 3. `train_mace` — train a MACE-style KLAY model on the downloaded data
 4. `use_model` — run energy/forces/relax calculations or generate a Python snippet
 5. `run_test_driver` — validate the model against OpenKIM-style property tests
+
+### Or: one-shot via workflow tools
+
+For multi-step pipelines, the LLM can emit a single LangGraph spec instead of
+chaining atomic calls. The server validates, compiles, and runs the graph with
+SQLite checkpointing — so a crashed run resumes from the last completed node.
+
+```text
+list_workflow_templates                     # see what's pre-built
+get_workflow_template("local_first_train")  # fetch one as JSON
+run_workflow(spec, initial_state={...})     # execute end-to-end
+```
+
+Available templates: `dataset_to_trained_model`, `local_first_train` (skip the
+download if a local match exists), `dataset_to_evaluated_model` (search → train
+→ run several test drivers in parallel, with a human-in-the-loop interrupt
+before training), `inference_sweep` (batch inference over many structures with
+an existing model), `build_from_extxyz_then_train` (VastDB custom-filter →
+train).
+
+For workflows outside these patterns, the LLM authors a custom spec referencing
+`list_workflow_nodes()` (the closed-enum catalog of node types and router
+predicates — no arbitrary code execution). See the [LangGraph integration
+notes](dev_files/langgraph_integration.md) for the spec DSL and execution model.
 
 ## Sample Prompts
 
@@ -239,6 +271,10 @@ The following prompts work directly in Claude Code or Claude Desktop once the MC
 **End-to-end workflow:**
 
 > Search ColabFit for silicon datasets with forces, download the best one, train a MACE model, calculate energy and forces on bulk diamond-cubic silicon, then run the ElasticConstantsCrystal and EquilibriumCrystalStructure test drivers to validate the model. Report the elastic constants and equilibrium lattice parameter when done.
+
+**One-shot via workflow template:**
+
+> Use the dataset_to_evaluated_model workflow template for silicon. Customize the initial_state for Si diamond, and pause before training so I can confirm the dataset and architecture.
 
 ## Stopping / Canceling Training
 
@@ -360,12 +396,20 @@ server container
 ├── MCP server (FastMCP, stdio)
 ├── KLIFF (dataset loading, training orchestration)
 ├── KLAY (MACE-style model construction)
+├── LangGraph (workflow compilation + execution, SQLite checkpointing)
 └── Training via KLIFF GNNLightningTrainer
 ```
 
 Datasets are downloaded from HuggingFace (`colabfit/` org) as parquet/arrow files via KLIFF's
 `Dataset.from_huggingface` and cached locally. Models are MACE-style graphs
 built with KLAY and trained with KLIFF's Lightning trainer.
+
+Workflows (the `run_workflow` family of tools) compile a JSON graph spec into a
+LangGraph `StateGraph` of node wrappers around the atomic tools, persist state
+after every node to `<data_root>/workflows/checkpoints.sqlite`, and support
+human-in-the-loop interrupts and resume. The DSL is closed-enum (node `type`
+and `router` are restricted to a fixed catalog) so the LLM cannot inject
+arbitrary code via a spec.
 
 Container managed by Docker Compose:
 - **server** — MCP server + ML training

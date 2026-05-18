@@ -54,6 +54,26 @@ try:
 except ImportError as e:
     logger.warning(f"Test driver tools disabled: {e}. Install with [full] extras.")
 
+try:
+    from colabfit_mcp.tools.workflow import (
+        compile_workflow,
+        get_workflow_status,
+        get_workflow_template,
+        list_workflow_nodes,
+        list_workflow_templates,
+        resume_workflow,
+        run_workflow,
+    )
+    mcp.tool()(compile_workflow)
+    mcp.tool()(run_workflow)
+    mcp.tool()(resume_workflow)
+    mcp.tool()(get_workflow_status)
+    mcp.tool()(list_workflow_nodes)
+    mcp.tool()(list_workflow_templates)
+    mcp.tool()(get_workflow_template)
+except ImportError as e:
+    logger.warning(f"Workflow tools disabled: {e}. Install langgraph + pydantic.")
+
 
 def main():
     mcp.run(transport="stdio")
