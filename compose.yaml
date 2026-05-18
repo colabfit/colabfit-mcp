@@ -7,7 +7,8 @@ services:
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
     user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
-    stdin_open: true
+    ports:
+      - "8000:8000"
     environment:
       HOST_DATA_ROOT: ${HOST_DATA_ROOT:-}
       HF_TOKEN: ${HF_TOKEN:-}
@@ -18,4 +19,36 @@ services:
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/datasets:/home/mcpuser/colabfit/datasets
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/inference_output:/home/mcpuser/colabfit/inference_output
       - ${COLABFIT_DATA_ROOT:-./colabfit_data}/test_driver_output:/home/mcpuser/colabfit/test_driver_output
+    shm_size: "2gb"
+
+  minimal:
+    image: colabfit-minimal:latest
+    ports:
+      - "8000:8000"
+    environment:
+      HOST_DATA_ROOT: ${HOST_DATA_ROOT:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+    env_file:
+      - .env
+    volumes:
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/models:/home/openkim/colabfit/models
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/datasets:/home/openkim/colabfit/datasets
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/inference_output:/home/openkim/colabfit/inference_output
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/test_driver_output:/home/openkim/colabfit/test_driver_output
+    shm_size: "2gb"
+
+  torchml:
+    image: colabfit-torchml:latest
+    ports:
+      - "8000:8000"
+    environment:
+      HOST_DATA_ROOT: ${HOST_DATA_ROOT:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+    env_file:
+      - .env
+    volumes:
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/models:/home/openkim/colabfit/models
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/datasets:/home/openkim/colabfit/datasets
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/inference_output:/home/openkim/colabfit/inference_output
+      - ${COLABFIT_DATA_ROOT:-./colabfit_data}/test_driver_output:/home/openkim/colabfit/test_driver_output
     shm_size: "2gb"

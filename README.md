@@ -72,16 +72,31 @@ USER_ID=$(id -u) GROUP_ID=$(id -g) ./start.sh build
 
 ### Register the MCP server
 
-`start.sh` automatically detects NVIDIA GPU availability and enables GPU passthrough when present, falling back to CPU otherwise.
+The server uses **streamable-http transport** (port 8000). Start the container first, then register your client once using the URL.
 
-**Claude Code:**
+`start.sh` automatically detects NVIDIA GPU availability and enables GPU passthrough for the `torchml` service when present.
+
+**Start the server** (choose one):
 
 ```bash
-claude mcp add colabfit-mcp -- /path/to/colabfit-mcp/start.sh
+# Minimal server (search, download, dataset tools only)
+/path/to/colabfit-mcp/start.sh
+
+# Full ML stack (adds training, inference, test drivers)
+/path/to/colabfit-mcp/start.sh torchml
+
+# Run as background daemon
+/path/to/colabfit-mcp/start.sh up -d minimal
+/path/to/colabfit-mcp/start.sh up -d torchml
 ```
 
 Replace `/path/to/colabfit-mcp` with the absolute path to this repository.
-Then restart Claude Code for the new server to take effect.
+
+**Claude Code** (one-time registration after starting the server):
+
+```bash
+claude mcp add --transport http colabfit-mcp http://127.0.0.1:8000/mcp
+```
 
 **Claude Desktop:**
 
@@ -91,79 +106,52 @@ Add to your Claude Desktop config (`Settings > Developer > Edit Config`):
 {
   "mcpServers": {
     "colabfit-mcp": {
-      "command": "/path/to/colabfit-mcp/start.sh",
-      "args": ["run", "--rm", "-i", "server"]
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8000/mcp"
     }
   }
 }
 ```
 
-**OpenAI Agent (API-based, not ChatGPT app):**
+**OpenAI Agent (API-based):**
 
-OpenAI agents that support MCP can connect to this server over `stdio` by launching the same command used above.
+```python
+from agents.mcp import MCPServerStreamableHttp
 
-Use this command as the MCP server entrypoint:
-
-```bash
-/path/to/colabfit-mcp/start.sh
+async with MCPServerStreamableHttp(
+    params={"url": "http://127.0.0.1:8000/mcp"},
+    client_session_timeout_seconds=6000,
+    name="colabfit-mcp",
+) as server:
+    # pass server to your Agent(mcp_servers=[server])
 ```
 
-If your agent framework requires explicit command/args fields, use:
-
-```json
-{
-  "command": "/path/to/colabfit-mcp/start.sh",
-  "args": ["run", "--rm", "-i", "server"]
-}
-```
-
-Notes:
-
-- This is for OpenAI API-based agent runtimes that support MCP server registration.
-- The ChatGPT consumer app (including non-Pro accounts) does not provide local `stdio` MCP server registration in the same way as developer agent runtimes.
-- Replace `/path/to/colabfit-mcp` with the absolute path to this repository.
+Start the container with `docker run --rm -p 8000:8000 colabfit-minimal` (or `colabfit-torchml`) before connecting.
 
 ### Generic MCP Client Setup
 
-The server uses standard MCP `stdio` transport and works with any MCP-compatible client.
+The server uses MCP `streamable-http` transport on `http://127.0.0.1:8000/mcp`. Any MCP-compatible client that supports streamable-http can connect using that URL once the container is running.
 
-**Entry point** (after pip install or in the Docker container):
-
-```bash
-colabfit-mcp          # registered console script
-# or
-python -m colabfit_mcp
-```
-
-**Testing with mcp-cli:**
+**Entry point** (pip install or direct Docker run):
 
 ```bash
-pip install mcp-cli
-mcp-cli run colabfit-mcp -- colabfit-mcp
+colabfit-mcp                              # streamable-http on port 8000 (default)
+colabfit-mcp --transport stdio            # stdio mode for clients that require it
 ```
-
-**Any stdio MCP client** (Gemini, OpenAI agents, Cursor, etc.) can register the server using the same `command` / `args` pattern as Claude Desktop above. The protocol is standardized — all tools use MCP `stdio` transport, no HTTP server or open port is required.
 
 **Python SDK client example:**
 
 ```python
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
+from mcp import ClientSession
 
-params = StdioServerParameters(
-    command="/path/to/colabfit-mcp/start.sh",
-    args=["run", "--rm", "-i", "server"],
-)
-
-async with stdio_client(params) as (read, write):
+async with streamablehttp_client("http://127.0.0.1:8000/mcp") as (read, write, _):
     async with ClientSession(read, write) as session:
         await session.initialize()
         tools = await session.list_tools()
         result = await session.call_tool("check_status", {})
         print(result)
 ```
-
-Install the client library with `pip install mcp`. The server uses JSON-RPC 2.0 over stdio — raw `subprocess.Popen` with hand-crafted JSON will not work; use a proper MCP client library.
 
 > Note: Docker is required for training and inference (heavy dependencies). The `search_datasets`, `check_local_datasets`, `download_dataset`, `build_dataset`, and `check_status` tools work without Docker via a plain pip install.
 
@@ -242,9 +230,13 @@ The following prompts work directly in Claude Code or Claude Desktop once the MC
 
 ## Stopping / Canceling Training
 
-The MCP server runs via `docker compose run` (not `docker compose up`), so
-`docker compose down` alone will **not** stop an active training container.
-Use the methods below to stop the server including any in-progress training job.
+The MCP server runs via `docker compose up`, so `docker compose down` stops it cleanly.
+
+### Using start.sh
+
+```bash
+/path/to/colabfit-mcp/start.sh down
+```
 
 ### Using Makefile
 
@@ -255,16 +247,7 @@ make stop
 ### Without Makefile
 
 ```bash
-# Stop all containers belonging to this project (catches both 'up' and 'run' containers)
-docker ps -q --filter "label=com.docker.compose.project=colabfit-mcp" | xargs -r docker stop
 docker compose down
-```
-
-If the project directory is not named `colabfit-mcp`, replace the filter value with your
-directory name (lowercased). You can check the label on a running container with:
-
-```bash
-docker inspect <container-id> --format '{{ index .Config.Labels "com.docker.compose.project" }}'
 ```
 
 > Training progress is saved as `training.log` inside the model's KIM subdirectory
@@ -283,8 +266,9 @@ View live training output as it happens:
 # Using Makefile
 make logs
 
-# Or directly with docker compose
-docker compose logs -f server
+# Or directly with docker compose (use the service you started)
+docker compose logs -f minimal
+docker compose logs -f torchml
 ```
 
 Press `Ctrl+C` to exit (training continues in background).
@@ -320,8 +304,11 @@ and `check_status`. Training and inference require Docker — the full dependenc
 
 ### Register with Claude Code
 
+Start the server first (it binds to port 8000), then register once:
+
 ```bash
-claude mcp add colabfit-mcp -- colabfit-mcp
+colabfit-mcp &   # or: colabfit-mcp --transport stdio for stdio mode
+claude mcp add --transport http colabfit-mcp http://127.0.0.1:8000/mcp
 ```
 
 ### Register with Claude Desktop
@@ -332,7 +319,8 @@ Add to your Claude Desktop config (`Settings > Developer > Edit Config`):
 {
   "mcpServers": {
     "colabfit-mcp": {
-      "command": "colabfit-mcp"
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8000/mcp"
     }
   }
 }
@@ -357,7 +345,7 @@ Subdirectories are created automatically the first time each tool writes data.
 
 ```
 server container
-├── MCP server (FastMCP, stdio)
+├── MCP server (FastMCP, streamable-http on port 8000)
 ├── KLIFF (dataset loading, training orchestration)
 ├── KLAY (MACE-style model construction)
 └── Training via KLIFF GNNLightningTrainer
@@ -368,7 +356,9 @@ Datasets are downloaded from HuggingFace (`colabfit/` org) as parquet/arrow file
 built with KLAY and trained with KLIFF's Lightning trainer.
 
 Container managed by Docker Compose:
-- **server** — MCP server + ML training
+- **minimal** — search, download, dataset tools (KDP base image, no ML deps)
+- **torchml** — full ML stack: training, inference, test drivers (KDP torchml base image)
+- **server** — alternative build from root Dockerfile (nvidia/cuda base)
 
 ## Environment Variables
 
@@ -442,9 +432,9 @@ installed and the Docker daemon has been restarted. Verify with
 `docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi`.
 If no NVIDIA GPU is present, use `./start.sh` which falls back to CPU automatically.
 
-**MCP server not responding**: The server uses stdio transport, not HTTP. It
-must be launched via `docker compose run --rm -i server`, not accessed
-over a network port.
+**MCP server not responding**: The server uses streamable-http transport on port 8000.
+Ensure the container is running (`./start.sh` or `./start.sh torchml`) and port 8000
+is reachable. Claude Code must be registered with `--transport http http://127.0.0.1:8000/mcp`.
 
 ---
 
