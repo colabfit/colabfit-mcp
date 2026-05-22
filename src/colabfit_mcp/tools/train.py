@@ -21,6 +21,24 @@ from colabfit_mcp.helpers.kliff_utils import analyze_configs, fix_species_types
 from colabfit_mcp.tools.dataset_resolver import resolve_dataset, resolve_dataset_by_name
 
 
+def _resolve_lr_scheduler(
+    lr_scheduler: str | None,
+    max_num_epochs: int,
+    lr: float,
+) -> tuple[str | None, dict | None]:
+    """Map convenience aliases to torch scheduler names + default args."""
+    if lr_scheduler is None:
+        return None, None
+    aliases = {
+        "cosine": ("CosineAnnealingLR", {"T_max": max_num_epochs, "eta_min": lr / 100}),
+        "step": ("StepLR", {"step_size": max(1, max_num_epochs // 3), "gamma": 0.5}),
+        "plateau": ("ReduceLROnPlateau", {"factor": 0.5, "patience": 10, "min_lr": lr / 1000}),
+    }
+    if lr_scheduler.lower() in aliases:
+        return aliases[lr_scheduler.lower()]
+    return lr_scheduler, {}
+
+
 def train_mace(
     train_file: str | None = None,
     model_name: str | None = None,
@@ -34,6 +52,7 @@ def train_mace(
     avg_num_neighbors: float | None = None,
     lr: float | None = None,
     num_channels: int | None = None,
+    lr_scheduler: str | None = None,
 ) -> dict:
     """Train a MACE-style KLAY model using KLIFF on XYZ data.
 
@@ -113,6 +132,14 @@ def train_mace(
               - 256: large datasets (>2000 configs) or complex multi-element chemistry
             Increasing num_channels is the primary way to scale up model expressiveness;
             prefer increasing this over n_layers when more capacity is needed.
+        lr_scheduler: Learning rate schedule. Convenience aliases:
+              - "cosine": CosineAnnealingLR — smoothly decays LR from lr to lr/100
+                over max_num_epochs. Best default choice for MACE.
+              - "step": StepLR — halves LR every max_num_epochs//3 epochs.
+              - "plateau": ReduceLROnPlateau — halves LR when val_loss stagnates
+                for 10 epochs; good for long runs where convergence is uncertain.
+            Also accepts any torch.optim.lr_scheduler class name directly
+            (e.g. "ExponentialLR"). None (default) = fixed LR.
 
     IMPORTANT — TELL THE USER THE LOG PATH AFTER CALLING THIS TOOL:
         Training can take minutes to hours. Always report the 'training_log'
@@ -309,6 +336,9 @@ def train_mace(
         f" | correlation={defaults['correlation']}"
     )
 
+    effective_lr = lr if lr is not None else defaults["lr"]
+    _scheduler_name, _scheduler_args = _resolve_lr_scheduler(lr_scheduler, max_num_epochs, effective_lr)
+
     _hf_id = dataset_info["hf_id"] if train_file is None else None
     _dataset_name = dataset_info["safe_name"] if train_file is None else None
     manifest = build_training_manifest(
@@ -321,7 +351,9 @@ def train_mace(
         train_size=defaults["train_size"],
         val_size=defaults["val_size"],
         max_num_epochs=max_num_epochs,
-        lr=lr if lr is not None else defaults["lr"],
+        lr=effective_lr,
+        lr_scheduler=_scheduler_name,
+        lr_scheduler_args=_scheduler_args,
         seed=defaults["seed"],
         device=device,
         n_configs=n_configs,
@@ -400,6 +432,8 @@ def train_mace(
             "n_layers": n_layers,
             "correlation": defaults["correlation"],
             "avg_num_neighbors": effective_avg_neighbors,
+            "lr_scheduler": _scheduler_name,
+            "lr_scheduler_args": _scheduler_args,
         },
         "elements": dataset_elements,
         "metrics": metrics,
