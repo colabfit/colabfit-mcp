@@ -32,6 +32,8 @@ def train_mace(
     elements: list[str] | None = None,
     n_layers: int = 2,
     avg_num_neighbors: float | None = None,
+    lr: float | None = None,
+    num_channels: int | None = None,
 ) -> dict:
     """Train a MACE-style KLAY model using KLIFF on XYZ data.
 
@@ -93,8 +95,24 @@ def train_mace(
         device: "cuda", "mps", or "cpu" (auto-detected if None).
         elements: Element filter for auto-discovery when dataset_name and
             train_file are both None (e.g. ["Si", "O"]).
-        n_layers: Number of MACE interaction layers (default 2).
+        n_layers: Number of MACE interaction layers (default 2). Use 2 for simple
+            single-element systems. Use 3 for complex multi-element systems or when
+            the dataset contains diverse bonding environments.
         avg_num_neighbors: Expected neighbors within r_max. Auto-estimated if None.
+            Override only if auto-estimation is unreliable (e.g. very sparse structures).
+        lr: Adam optimizer learning rate (default 0.0001). Controls how large each
+            gradient step is. If training loss oscillates wildly between epochs rather
+            than decreasing smoothly, the LR is too high — try 1e-4 or 5e-5. If loss
+            decreases but very slowly, try increasing to 5e-4. Typical range: 1e-5 to
+            1e-3. Do NOT exceed 1e-3 — MACE equivariant models are sensitive to LR.
+        num_channels: Feature dimension (embedding width) per interaction layer
+            (default 128). Higher values increase model capacity and training time.
+            Guidelines:
+              - 32–64: very small datasets (<100 configs) or CPU-only runs
+              - 128: standard for datasets of 100–2000 configs (default)
+              - 256: large datasets (>2000 configs) or complex multi-element chemistry
+            Increasing num_channels is the primary way to scale up model expressiveness;
+            prefer increasing this over n_layers when more capacity is needed.
 
     IMPORTANT — TELL THE USER THE LOG PATH AFTER CALLING THIS TOOL:
         Training can take minutes to hours. Always report the 'training_log'
@@ -269,10 +287,11 @@ def train_mace(
 
     logger.info("Building KLAY model...")
     try:
+        effective_num_channels = num_channels if num_channels is not None else defaults["num_channels"]
         cfg_dict = build_mace_klay_config(
             elements=dataset_elements,
             r_max=r_max,
-            n_channels=defaults["num_channels"],
+            n_channels=effective_num_channels,
             lmax=defaults["lmax"],
             correlation=defaults["correlation"],
             avg_num_neighbors=effective_avg_neighbors,
@@ -289,7 +308,7 @@ def train_mace(
     n_params = sum(p.numel() for p in model.parameters())
     logger.info(
         f"Model built: {n_params} parameters | n_layers={n_layers}"
-        f" | lmax={defaults['lmax']} | n_channels={defaults['num_channels']}"
+        f" | lmax={defaults['lmax']} | n_channels={effective_num_channels}"
         f" | correlation={defaults['correlation']}"
     )
 
@@ -305,7 +324,7 @@ def train_mace(
         train_size=defaults["train_size"],
         val_size=defaults["val_size"],
         max_num_epochs=max_num_epochs,
-        lr=defaults["lr"],
+        lr=lr if lr is not None else defaults["lr"],
         seed=defaults["seed"],
         device=device,
         n_configs=n_configs,
@@ -379,7 +398,7 @@ def train_mace(
         "device": device,
         "architecture": {
             "r_max": r_max,
-            "num_channels": defaults["num_channels"],
+            "num_channels": effective_num_channels,
             "lmax": defaults["lmax"],
             "n_layers": n_layers,
             "correlation": defaults["correlation"],
