@@ -3,6 +3,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from colabfit_mcp.helpers import klay_layers  # noqa: F401 — registers SphericalHarmonicEdgeAttrsNoShift
+
 
 def build_mace_klay_config(
     elements: list[str],
@@ -22,7 +24,7 @@ def build_mace_klay_config(
             "inputs": {"x": "model_inputs.species"},
         },
         "edge_features": {
-            "type": "SphericalHarmonicEdgeAttrs",
+            "type": "SphericalHarmonicEdgeAttrsNoShift",
             "config": {"lmax": lmax},
             "inputs": {
                 "pos": "model_inputs.coords",
