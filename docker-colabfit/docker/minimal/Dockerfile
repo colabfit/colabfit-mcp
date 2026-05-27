@@ -2,8 +2,8 @@
 ### BASE SYSTEM SETUP FROM kdp:minimal DOCKER IMAGE ###
 #######################################################
 
-# starting from KDP-minimal
-FROM ghcr.io/openkim/developer-platform:latest-minimal
+# starting from KDP-minimal v1.8.9
+FROM ghcr.io/openkim/developer-platform:v1.8.9-torchml
 
 # use ROOT user to install systemwide colabfit-mcp requirements
 USER root 

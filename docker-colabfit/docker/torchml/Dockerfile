@@ -1,5 +1,5 @@
-# starting from KDP-torchml
-FROM ghcr.io/openkim/developer-platform:latest-torchml
+# starting from KDP-torchml v1.8.9
+FROM ghcr.io/openkim/developer-platform:v1.8.9-torchml
 
 # temporarily switch to ROOT user to install systemwide colabfit-mcp requirements
 USER root 
