@@ -1,4 +1,0 @@
-services:
-  server:
-    build:
-      dockerfile: Dockerfile.cpu
