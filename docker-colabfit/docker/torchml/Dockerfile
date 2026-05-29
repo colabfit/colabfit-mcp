@@ -116,6 +116,8 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install torch_ema==0.3.0 tens
 # dont install [full] because [full] is not supposed to be pinned to a specific version (i think)
 RUN pip install .
 
+USER openkim 
+WORKDIR /home/openkim
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import colabfit_mcp; import torch; print(torch.__version__)" || exit 1
