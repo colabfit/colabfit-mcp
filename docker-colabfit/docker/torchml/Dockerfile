@@ -73,6 +73,41 @@ RUN python -m pip install --no-cache-dir "kimpy==2.1.4"
 RUN python -m pip install --no-cache-dir "kim-tools==0.4.9"
 RUN python -m pip install --no-cache-dir "kimvv==0.1.10"
 
+# CUDA INSTALLATIONS 
+
+# these are already satisfied 
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install nvidia-cuda-runtime-cu12==12.8.90 nvidia-cuda-nvrtc-cu12==12.8.93 \
+    nvidia-cuda-cupti-cu12==12.8.90 nvidia-nvtx-cu12==12.8.90 \
+    nvidia-nvjitlink-cu12==12.8.93
+
+# these are already satisfied 
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install nvidia-cublas-cu12==12.8.4.1 nvidia-cufft-cu12==11.3.3.83 \
+    nvidia-curand-cu12==10.3.9.90 nvidia-cusolver-cu12==11.7.3.90 \
+    nvidia-cusparse-cu12==12.5.8.93 nvidia-cusparselt-cu12==0.7.1
+
+# these are already satisfied 
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install nvidia-cudnn-cu12==9.10.2.21 nvidia-nccl-cu12==2.27.3 \
+    nvidia-cufile-cu12==1.13.1.3
+
+# these are already satisfied 
+RUN --mount=type=cache,target=/root/.cache/pip pip install torch==2.8.0
+
+# these are already satisfied 
+# PyG graph dependencies (exact wheel URL for torch 2.8.0 + cu128)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv \
+    -f https://data.pyg.org/whl/torch-2.8.0+cu128.html
+
+# these are already satisfied 
+RUN --mount=type=cache,target=/root/.cache/pip pip install torch_geometric==2.6.1
+RUN --mount=type=cache,target=/root/.cache/pip pip install pytorch-lightning==2.5.2
+RUN --mount=type=cache,target=/root/.cache/pip pip install jsonargparse==4.40.0
+RUN --mount=type=cache,target=/root/.cache/pip pip install torch_ema==0.3.0 tensorboardX==2.6.5
+
+
 # Install colabfit-mcp and dependencies from repo
 # RUN pip install --user --no-cache-dir "colabfit_mcp[full] @ git+${REPO_URL}@${REPO_REF}"
 
