@@ -42,25 +42,20 @@ WORKDIR ${PACKAGE_DIR}/colabfit-mcp
 # install openai-agent library. This probably doesnt belong here. This is client-side code. Not server code. 
 # RUN python -m pip install --no-cache-dir openai-agents
 
-# CPU torch
-# RUN python -m pip install --user --no-cache-dir \
-#     torch --index-url https://download.pytorch.org/whl/cpu
-
-# PyG wheels matched to torch 2.8.0 CPU
-# NOTE: THESE SHOULD HAVE VERSIONS AFFIXED TO THEM BECAUSE THEIR DOCKER-IMAGE INSTALLATIONS
-RUN python -m pip install -vvv --user --no-cache-dir \
-    pyg_lib \
-    torch_scatter \
-    torch_sparse \
-    torch_cluster \
-    torch_spline_conv \
-    -f https://data.pyg.org/whl/torch-2.8.0+cpu.html
-
-# RUN python -m pip install -vvv --user --no-cache-dir \
-    # torch_geometric==2.6.1 \
-    # pytorch-lightning==2.5.2 \
-    # torch_ema==0.3.0 
-    # klay # dont install klay here. install gregory's fork of klay
+# Build Torch libraries for common Nvidia configs by default
+ENV TORCH_CUDA_ARCH_LIST=Common
+# CPU torch v2.8.0
+RUN pip install --no-cache-dir torch==2.8.0
+# pyg_lib 0.6.0+pt28cpu
+RUN pip install --no-cache-dir pyg_lib -f https://data.pyg.org/whl/torch-2.8.0+cpu.html
+# torch_scatter 2.1.2+pt28cpu
+RUN pip install --no-cache-dir torch_scatter -f https://data.pyg.org/whl/torch-2.8.0+cpu.html 
+# torch_sparse 0.6.18+pt28cpu
+RUN pip install --no-cache-dir torch_sparse -f https://data.pyg.org/whl/torch-2.8.0+cpu.html 
+# torch_cluster 1.6.3+pt28cpu
+RUN pip install --no-cache-dir torch_cluster -f https://data.pyg.org/whl/torch-2.8.0+cpu.html
+# torch_spline_conv 1.2.2+pt28cpu
+RUN pip install --no-cache-dir torch_spline_conv -f https://data.pyg.org/whl/torch-2.8.0+cpu.html
 
 # install dependencies pinned to a version
 RUN python -m pip install "mcp[cli]>=1.0.0"
