@@ -3,7 +3,7 @@
 #######################################################
 
 # starting from KDP-minimal v1.8.9
-FROM ghcr.io/openkim/developer-platform:v1.8.9-torchml
+FROM ghcr.io/openkim/developer-platform:v1.8.9-minimal
 
 # use ROOT user to install systemwide colabfit-mcp requirements
 USER root 
