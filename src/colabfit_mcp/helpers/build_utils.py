@@ -103,8 +103,6 @@ def _parquet_to_extxyz(parquet_path: Path, output_path: Path) -> tuple:
             continue
 
         cell = np.array(row.get("cell") or [[0, 0, 0]] * 3, dtype=float)
-        if abs(np.linalg.det(cell)) < 1e-6:
-            continue
         atoms = Atoms(
             numbers=atomic_numbers,
             positions=np.array(positions, dtype=float),

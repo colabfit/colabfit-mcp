@@ -135,6 +135,8 @@ def build_training_manifest(
     num_workers: int = 0,
     dataset_name: str | None = None,
     hf_id: str | None = None,
+    lr_scheduler: str | None = None,
+    lr_scheduler_args: dict | None = None,
 ) -> dict[str, Any]:
     """Return a KLIFF GNNLightningTrainer manifest dict.
 
@@ -173,7 +175,15 @@ def build_training_manifest(
                 "function": "MSE",
                 "weights": {"config": 1.0, "energy": 1.0, "forces": 10.0},
             },
-            "optimizer": {"name": "Adam", "learning_rate": lr},
+            "optimizer": {
+                "name": "Adam",
+                "learning_rate": lr,
+                **(
+                    {"lr_scheduler": {"name": lr_scheduler, "args": lr_scheduler_args or {}}}
+                    if lr_scheduler
+                    else {}
+                ),
+            },
             "training_dataset": {"train_size": effective_train},
             "validation_dataset": {"val_size": effective_val},
             "batch_size": batch_size,

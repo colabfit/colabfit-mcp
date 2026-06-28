@@ -7,3 +7,11 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+  torchml:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

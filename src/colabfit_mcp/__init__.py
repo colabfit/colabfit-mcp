@@ -56,5 +56,10 @@ except ImportError as e:
 
 
 def main():
-    mcp.settings.host = "0.0.0.0"
-    mcp.run(transport="streamable-http")
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--transport", default="streamable-http", choices=["stdio", "streamable-http"])
+    args, _ = parser.parse_known_args()
+    if args.transport == "streamable-http":
+        mcp.settings.host = "0.0.0.0"
+    mcp.run(transport=args.transport)

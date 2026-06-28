@@ -2,8 +2,16 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Usage:
+#   ./start.sh                  — run minimal server (HTTP, port 8000)
+#   ./start.sh torchml          — run torchml server (HTTP, port 8000)
+#   ./start.sh up -d minimal    — start minimal as daemon
+#   ./start.sh up -d torchml    — start torchml as daemon
+#   ./start.sh down             — stop daemon
 if [ $# -eq 0 ]; then
-    set -- run --rm -i server
+    set -- up minimal
+elif [ "$1" = "minimal" ] || [ "$1" = "torchml" ]; then
+    set -- up "$1"
 fi
 
 # Export so docker compose picks them up for both build args and the user: directive.
