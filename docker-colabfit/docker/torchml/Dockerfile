@@ -38,7 +38,7 @@ ENV TORCH_CUDA_ARCH_LIST=Common
 # with --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ARG TORCH_VARIANT=cu128
 # ARG TORCH_VARIANT=cpu
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/
+ARG TORCH_INDEX_URL="https://download.pytorch.org/whl/${TORCH_VARIANT}"
 RUN if [ -n "${TORCH_INDEX_URL}" ]; then \
         python -m pip install --no-cache-dir torch==2.8.0 --index-url "${TORCH_INDEX_URL}"; \
     else \
