@@ -24,17 +24,21 @@ RUN python -m pip install --no-cache-dir --upgrade \
 
 # use KDP packages directory
 ARG PACKAGE_DIR=/pipeline/packages/
-ARG PACKAGE_DIR=/pipeline/packages/
 
 # colabfit-mcp repo url
 ARG REPO_URL=https://github.com/colabfit/colabfit-mcp.git
-ARG REPO_REF=kdp_minimal_base_claude
+# ARG REPO_REF=main
+ARG REPO_REF=kdp_minimal_base
+
+# Build Torch libraries for common Nvidia configs by default
+ENV TORCH_CUDA_ARCH_LIST=Common
 
 # Torch 2.8.0 — KDP base ships no torch; install explicitly to match root Dockerfile.
 # GPU (default): TORCH_VARIANT=cu128. CPU: --build-arg TORCH_VARIANT=cpu
 # with --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ARG TORCH_VARIANT=cu128
-ARG TORCH_INDEX_URL=
+# ARG TORCH_VARIANT=cpu
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/
 RUN if [ -n "${TORCH_INDEX_URL}" ]; then \
         python -m pip install --no-cache-dir torch==2.8.0 --index-url "${TORCH_INDEX_URL}"; \
     else \
