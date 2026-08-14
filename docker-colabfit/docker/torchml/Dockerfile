@@ -49,7 +49,7 @@ RUN python -m pip install --no-cache-dir \
     -f "https://data.pyg.org/whl/torch-2.8.0+${TORCH_VARIANT}.html"
 
 # install dependencies pinned to a version
-RUN python -m pip install "mcp[cli]>=1.0.0"
+RUN python -m pip install "mcp[cli]>=1.0.0,<2"
 RUN python -m pip install "requests==2.33.1"
 RUN python -m pip install "numpy==2.0.0"
 RUN python -m pip install "pyarrow==24.0.0"

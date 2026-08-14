@@ -56,7 +56,7 @@ WORKDIR ${PACKAGE_DIR}/colabfit-mcp
 
 
 # install packages listed in ${PACKAGE_DIR}/colabfit-mcp/pyproject.toml
-RUN python -m pip install --no-cache-dir "mcp[cli]>=1.0.0"
+RUN python -m pip install --no-cache-dir "mcp[cli]>=1.0.0,<2"
 RUN python -m pip install --no-cache-dir "requests==2.33.1"
 RUN python -m pip install --no-cache-dir "numpy==2.0.0"
 RUN python -m pip install --no-cache-dir "pyarrow==24.0.0"
